@@ -9,6 +9,12 @@ struct ComputePushConstants {
 	glm::vec4 data3;
 	glm::vec4 data4;
 };
+struct ComputeEffect {
+	const char* name;
+	VkPipeline pipeline;
+	VkPipelineLayout layout;
+	ComputePushConstants data;
+};
 struct DeletionQueue {
 	// It's better having arrays of vulkan handles of different types and then delete them from a loop, but this will do for now
 	std::deque<std::function<void()>> deletingFunctions;
@@ -75,11 +81,15 @@ public:
 	VkCommandBuffer _immediateVulkanCommandBuffer;
 	VkCommandPool _immediateVulkanCommandPool;
 
+	std::vector<ComputeEffect> backgroundEffects;
+	int currentBackgroundEffect{ 0 };
+
+	VkPipelineLayout _vulkanTrianglePipelineLayout;
+	VkPipeline _vulkanTrainglePipeline;
+
 	void init();
 	void cleanup();
 	void draw();
-	void draw_background(VkCommandBuffer vulkanCommandBuffer);
-	void draw_imgui(VkCommandBuffer vulkanCommandBuffer, VkImageView targetVulkanImageView);
 	void run();
 	FrameInfo& get_current_frame() { return _frames[_frameNumber % FRAME_OVERLAP]; };
 	void immediate_command_submit(std::function<void(VkCommandBuffer vulkanCommandBuffer)>&& function);
@@ -93,6 +103,10 @@ private:
 	void descriptors_init();
 	void pipelines_init();
 	void background_pipelines_init();
+	void triangle_pipeline_init();
 	void imgui_init();
+	void draw_background(VkCommandBuffer vulkanCommandBuffer);
+	void draw_imgui(VkCommandBuffer vulkanCommandBuffer, VkImageView targetVulkanImageView);
+	void draw_geometry(VkCommandBuffer vulkanCommandBuffer);
 };
 

@@ -6,7 +6,8 @@ cmake_minimum_required (VERSION 3.8)
 project ("vulkan_guide")
 
 
-find_package(Vulkan REQUIRED)
+find_package(Vulkan REQUIRED COMPONENTS glslc)
+find_program(glslc_executable NAMES glslc HINTS Vulkan::glslc)
 
 add_subdirectory(third_party)
 
@@ -16,29 +17,46 @@ set (CMAKE_LIBRARY_OUTPUT_DIRECTORY "${PROJECT_SOURCE_DIR}/bin")
 add_subdirectory(src)
 
 find_program(GLSL_VALIDATOR glslangValidator HINTS /usr/bin /usr/local/bin $ENV{VULKAN_SDK}/Bin/ $ENV{VULKAN_SDK}/Bin32/)
+	
+#==============================================================================
+# COMPILE SHADERS
+#
 
+set(SHADER_SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/shaders)
+set(SHADER_BINARY_DIR ${CMAKE_CURRENT_BINARY_DIR}/shaders)
 
+file(GLOB SHADERS
+  ${SHADER_SOURCE_DIR}/*.vert
+  ${SHADER_SOURCE_DIR}/*.frag
+  ${SHADER_SOURCE_DIR}/*.comp
+  ${SHADER_SOURCE_DIR}/*.geom
+  ${SHADER_SOURCE_DIR}/*.tesc
+  ${SHADER_SOURCE_DIR}/*.tese
+  ${SHADER_SOURCE_DIR}/*.mesh
+  ${SHADER_SOURCE_DIR}/*.task
+  ${SHADER_SOURCE_DIR}/*.rgen
+  ${SHADER_SOURCE_DIR}/*.rchit
+  ${SHADER_SOURCE_DIR}/*.rmiss)
 
+add_custom_command(
+  COMMAND
+    ${CMAKE_COMMAND} -E make_directory ${SHADER_BINARY_DIR}
+  OUTPUT ${SHADER_BINARY_DIR}
+  COMMENT "Creating ${SHADER_BINARY_DIR}"
+)
 
-file(GLOB_RECURSE GLSL_SOURCE_FILES
-    "${PROJECT_SOURCE_DIR}/shaders/*.frag"
-    "${PROJECT_SOURCE_DIR}/shaders/*.vert"
-    "${PROJECT_SOURCE_DIR}/shaders/*.comp"
-    )
-
-foreach(GLSL ${GLSL_SOURCE_FILES})
-  message(STATUS "BUILDING SHADER")
-  get_filename_component(FILE_NAME ${GLSL} NAME)
-  set(SPIRV "${PROJECT_SOURCE_DIR}/shaders/${FILE_NAME}.spv")
-  message(STATUS ${GLSL})
+foreach(source IN LISTS SHADERS)
+  get_filename_component(FILENAME ${source} NAME)
   add_custom_command(
-    OUTPUT ${SPIRV}
-    COMMAND ${GLSL_VALIDATOR} -V ${GLSL} -o ${SPIRV}
-    DEPENDS ${GLSL})
-  list(APPEND SPIRV_BINARY_FILES ${SPIRV})
-endforeach(GLSL)
+    COMMAND
+      ${glslc_executable}
+      -o ${SHADER_BINARY_DIR}/${FILENAME}.spv
+      ${source}
+    OUTPUT ${SHADER_BINARY_DIR}/${FILENAME}.spv
+    DEPENDS ${source} ${SHADER_BINARY_DIR}
+    COMMENT "Compiling ${FILENAME}"
+  )
+  list(APPEND SPV_SHADERS ${SHADER_BINARY_DIR}/${FILENAME}.spv)
+endforeach()
 
-add_custom_target(
-    Shaders 
-    DEPENDS ${SPIRV_BINARY_FILES}
-    )
+add_custom_target(shaders ALL DEPENDS ${SPV_SHADERS})

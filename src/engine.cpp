@@ -215,6 +215,43 @@ void VulkanEngine::descriptors_init() {
 
 void VulkanEngine::pipelines_init() {
     background_pipelines_init();
+    triangle_pipeline_init();
+}
+
+void VulkanEngine::triangle_pipeline_init() {
+    VkShaderModule vulkanTriangleFragShaderModule;
+    if (!vkutil::load_shader_module("../../vulkan-base/shaders/colored_triangle.frag.spv", _vulkanDevice, &vulkanTriangleFragShaderModule)) // only for windows + msvc folders
+        fmt::print("Error during fragment shaders build \n");
+
+
+    VkShaderModule vulkanTriangleVertShaderModule;
+    if (!vkutil::load_shader_module("../../vulkan-base/shaders/colored_triangle.vert.spv", _vulkanDevice, &vulkanTriangleVertShaderModule)) // only for windows + msvc folders
+        fmt::print("Error during vertex shaders build \n");
+
+    VkPipelineLayoutCreateInfo vulkanPipelineLayoutCreateInfo = vkinit::pipeline_layout_create_info();
+    VK_CHECK(vkCreatePipelineLayout(_vulkanDevice, &vulkanPipelineLayoutCreateInfo, nullptr, &_vulkanTrianglePipelineLayout));
+
+    PipelineBuilder pipelineBuilder;
+    pipelineBuilder._vulkanPipelineLayout = _vulkanTrianglePipelineLayout;
+    pipelineBuilder.set_shaders(vulkanTriangleVertShaderModule, vulkanTriangleFragShaderModule);
+    pipelineBuilder.set_input_topology(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST);
+    pipelineBuilder.set_polygon_mode(VK_POLYGON_MODE_FILL);
+    pipelineBuilder.set_cull_mode(VK_CULL_MODE_NONE, VK_FRONT_FACE_CLOCKWISE);
+    pipelineBuilder.set_multisampling_none();
+    pipelineBuilder.disable_blending();
+    pipelineBuilder.disable_depth_test();
+    pipelineBuilder.set_color_attachment_format(_allocatedImage.vulkanImageFormat);
+    pipelineBuilder.set_depth_format(VK_FORMAT_UNDEFINED);
+
+    _vulkanTrainglePipeline = pipelineBuilder.build_pipeline(_vulkanDevice);
+
+    vkDestroyShaderModule(_vulkanDevice, vulkanTriangleFragShaderModule, nullptr);
+    vkDestroyShaderModule(_vulkanDevice, vulkanTriangleVertShaderModule, nullptr);
+
+    _mainDeletionQueue.push_back_deleting_function([&]() {
+        vkDestroyPipelineLayout(_vulkanDevice, _vulkanTrianglePipelineLayout, nullptr);
+        vkDestroyPipeline(_vulkanDevice, _vulkanTrainglePipeline, nullptr);
+        });
 }
 
 void VulkanEngine::background_pipelines_init() {
@@ -232,14 +269,20 @@ void VulkanEngine::background_pipelines_init() {
 
     VK_CHECK(vkCreatePipelineLayout(_vulkanDevice, &vulkanComputePipelineLayout, nullptr, &_gradientPipelineLayout));
     
-    VkShaderModule vulkanComputreShaderModule;
-    if (!vkutil::load_shader_module("../../vulkan-base/shaders/gradient_color.comp.spv", _vulkanDevice, &vulkanComputreShaderModule)) // only for windows + msvc folders
+    VkShaderModule vulkanComputeGradientShaderModule;
+    if (!vkutil::load_shader_module("../../vulkan-base/shaders/gradient_color.comp.spv", _vulkanDevice, &vulkanComputeGradientShaderModule)) // only for windows + msvc folders
         fmt::print("Error during compute shaders build \n");
+    
+    VkShaderModule vulkanComputeNightSkyShaderModule;
+    if (!vkutil::load_shader_module("../../vulkan-base/shaders/sky.comp.spv", _vulkanDevice, &vulkanComputeNightSkyShaderModule)) // only for windows + msvc folders
+        fmt::print("Error during compute shaders build \n");
+
+
     VkPipelineShaderStageCreateInfo vulkanPipelineShaderStageCreateInfo{};
     vulkanPipelineShaderStageCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
     vulkanPipelineShaderStageCreateInfo.pNext = nullptr;
     vulkanPipelineShaderStageCreateInfo.stage = VK_SHADER_STAGE_COMPUTE_BIT;
-    vulkanPipelineShaderStageCreateInfo.module = vulkanComputreShaderModule;
+    vulkanPipelineShaderStageCreateInfo.module = vulkanComputeGradientShaderModule;
     vulkanPipelineShaderStageCreateInfo.pName = "main";
 
     VkComputePipelineCreateInfo vulkanComputePipelineCreateInfo{};
@@ -247,12 +290,34 @@ void VulkanEngine::background_pipelines_init() {
     vulkanComputePipelineCreateInfo.pNext = nullptr;
     vulkanComputePipelineCreateInfo.layout = _gradientPipelineLayout;
     vulkanComputePipelineCreateInfo.stage = vulkanPipelineShaderStageCreateInfo;
-    VK_CHECK(vkCreateComputePipelines(_vulkanDevice, VK_NULL_HANDLE,1,&vulkanComputePipelineCreateInfo,nullptr,&_gradientPipeline));
 
-    vkDestroyShaderModule(_vulkanDevice, vulkanComputreShaderModule, nullptr);
+    ComputeEffect gradientEffect;
+    gradientEffect.layout = _gradientPipelineLayout;
+    gradientEffect.name = "gradient";
+    gradientEffect.data = {};
+    gradientEffect.data.data1 = glm::vec4(1, 0, 0, 1);
+    gradientEffect.data.data2 = glm::vec4(0, 0, 1, 1);
+
+    VK_CHECK(vkCreateComputePipelines(_vulkanDevice, VK_NULL_HANDLE,1,&vulkanComputePipelineCreateInfo,nullptr,&gradientEffect.pipeline));
+    vulkanComputePipelineCreateInfo.stage.module = vulkanComputeNightSkyShaderModule;   
+
+    ComputeEffect nightSkyEffect;
+    nightSkyEffect.layout = _gradientPipelineLayout;
+    nightSkyEffect.name = "night_sky";
+    nightSkyEffect.data = {};
+    nightSkyEffect.data.data1 = glm::vec4(0.1, 0.2, 0.4, 0.97);
+
+    VK_CHECK(vkCreateComputePipelines(_vulkanDevice, VK_NULL_HANDLE, 1, &vulkanComputePipelineCreateInfo, nullptr, &nightSkyEffect.pipeline));
+
+    backgroundEffects.push_back(gradientEffect); 
+    backgroundEffects.push_back(nightSkyEffect);
+
+    vkDestroyShaderModule(_vulkanDevice, vulkanComputeGradientShaderModule, nullptr);
+    vkDestroyShaderModule(_vulkanDevice, vulkanComputeNightSkyShaderModule, nullptr);
     _mainDeletionQueue.push_back_deleting_function([&]() {
         vkDestroyPipelineLayout(_vulkanDevice, _gradientPipelineLayout, nullptr);
-        vkDestroyPipeline(_vulkanDevice, _gradientPipeline, nullptr);
+        for (auto effect = backgroundEffects.rbegin(); effect != backgroundEffects.rend(); effect++) 
+            vkDestroyPipeline(_vulkanDevice, effect->pipeline, nullptr);
         });
 }
 
@@ -355,8 +420,11 @@ void VulkanEngine::draw()
 
     vkutil::image_transition(vulkanCommandBuffer, _allocatedImage.vulkanImage, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_GENERAL);
     draw_background(vulkanCommandBuffer);
-    vkutil::image_transition(vulkanCommandBuffer, _allocatedImage.vulkanImage, VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
 
+    vkutil::image_transition(vulkanCommandBuffer, _allocatedImage.vulkanImage, VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
+    draw_geometry(vulkanCommandBuffer);
+
+    vkutil::image_transition(vulkanCommandBuffer, _allocatedImage.vulkanImage, VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
     vkutil::image_transition(vulkanCommandBuffer, _vulkanSwapchainImages[vulkanSwapchainImgIndex], VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL); // general is not the best for rendering, its just good for writing from compute shader
     vkutil::copy_image_to_image(vulkanCommandBuffer, _allocatedImage.vulkanImage, _vulkanSwapchainImages[vulkanSwapchainImgIndex], _vulkanImageExtent2D, _vulkanSwapchainExtent);
     vkutil::image_transition(vulkanCommandBuffer, _vulkanSwapchainImages[vulkanSwapchainImgIndex], VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR);
@@ -391,9 +459,26 @@ void VulkanEngine::draw_background(VkCommandBuffer vulkanCommandBuffer) {
     clearValue = { { 0.f, 0.f, flash, 1.f} };
     VkImageSubresourceRange clearRange = vkinit::image_subresource_range(VK_IMAGE_ASPECT_COLOR_BIT);
     vkCmdClearColorImage(vulkanCommandBuffer, _allocatedImage.vulkanImage, VK_IMAGE_LAYOUT_GENERAL, &clearValue, 1, &clearRange);*/
+    /*
     vkCmdBindPipeline(vulkanCommandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, _gradientPipeline); // binding pipeline 
     vkCmdBindDescriptorSets(vulkanCommandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, _gradientPipelineLayout, 0, 1, &_vulkanImageDescriptorSet, 0, nullptr); // binding descriptor
     vkCmdDispatch(vulkanCommandBuffer, std::ceil(_vulkanImageExtent2D.width / 16.0), std::ceil(_vulkanImageExtent2D.height / 16.0), 1); //exeuting pipeline dispatch
+    */
+    /*
+    vkCmdBindPipeline(vulkanCommandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, _gradientPipeline);
+    vkCmdBindDescriptorSets(vulkanCommandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, _gradientPipelineLayout, 0, 1, &_vulkanImageDescriptorSet, 0, nullptr);
+    ComputePushConstants pushConstants;
+    pushConstants.data1 = glm::vec4(1, 0, 0, 1);
+    pushConstants.data2 = glm::vec4(0, 0, 1, 1);
+
+    vkCmdPushConstants(vulkanCommandBuffer, _gradientPipelineLayout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(ComputePushConstants), &pushConstants);
+    vkCmdDispatch(vulkanCommandBuffer, std::ceil(_vulkanImageExtent2D.width / 16.0), std::ceil(_vulkanImageExtent2D.height / 16.0), 1);*/
+    ComputeEffect& currentEffect = backgroundEffects[currentBackgroundEffect];
+   
+    vkCmdBindPipeline(vulkanCommandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, currentEffect.pipeline);
+    vkCmdBindDescriptorSets(vulkanCommandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, _gradientPipelineLayout, 0, 1, &_vulkanImageDescriptorSet, 0, nullptr);
+    vkCmdPushConstants(vulkanCommandBuffer, _gradientPipelineLayout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(ComputePushConstants), &currentEffect.data);
+    vkCmdDispatch(vulkanCommandBuffer, std::ceil(_vulkanImageExtent2D.width / 16.0), std::ceil(_vulkanImageExtent2D.height / 16.0), 1); 
 }
 
 void VulkanEngine::draw_imgui(VkCommandBuffer vulkanCommandBuffer, VkImageView targetVulkanImageView) {
@@ -401,6 +486,29 @@ void VulkanEngine::draw_imgui(VkCommandBuffer vulkanCommandBuffer, VkImageView t
     VkRenderingInfo vulkanRenderingInfo = vkinit::rendering_info(_vulkanSwapchainExtent, &vulkanColorRenderingAttachmentInfo, nullptr);
     vkCmdBeginRendering(vulkanCommandBuffer, &vulkanRenderingInfo);
     ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), vulkanCommandBuffer);
+    vkCmdEndRendering(vulkanCommandBuffer);
+}
+
+void VulkanEngine::draw_geometry(VkCommandBuffer vulkanCommandBuffer) {
+    VkRenderingAttachmentInfo vulkanRenderingAttachmentInfo = vkinit::attachment_info(_allocatedImage.vulkanImageView, nullptr, VK_IMAGE_LAYOUT_GENERAL);
+    VkRenderingInfo vulkanRenderingInfo = vkinit::rendering_info(_vulkanImageExtent2D, &vulkanRenderingAttachmentInfo, nullptr);
+    vkCmdBeginRendering(vulkanCommandBuffer, &vulkanRenderingInfo);
+    vkCmdBindPipeline(vulkanCommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, _vulkanTrainglePipeline);
+    VkViewport vulkanViewport = {};
+    vulkanViewport.x = 0;
+    vulkanViewport.y = 0;
+    vulkanViewport.width = _vulkanImageExtent2D.width;
+    vulkanViewport.height = _vulkanImageExtent2D.height;
+    vulkanViewport.minDepth = 0.f;
+    vulkanViewport.maxDepth = 1.f;
+    vkCmdSetViewport(vulkanCommandBuffer, 0, 1, &vulkanViewport);
+    VkRect2D vulkanScissor = {};
+    vulkanScissor.offset.x = 0;
+    vulkanScissor.offset.y = 0;
+    vulkanScissor.extent.width = _vulkanImageExtent2D.width;
+    vulkanScissor.extent.height = _vulkanImageExtent2D.height;
+    vkCmdSetScissor(vulkanCommandBuffer, 0, 1, &vulkanScissor);
+    vkCmdDraw(vulkanCommandBuffer, 3, 1, 0, 0);
     vkCmdEndRendering(vulkanCommandBuffer);
 }
 
@@ -426,7 +534,17 @@ void VulkanEngine::run()
         ImGui_ImplVulkan_NewFrame();
         ImGui_ImplSDL2_NewFrame(_window);
         ImGui::NewFrame();
-        ImGui::ShowDemoWindow();
+        if (ImGui::Begin("background")) {
+            ComputeEffect& selectedEffect = backgroundEffects[currentBackgroundEffect];
+            ImGui::Text("Selected effect: ", selectedEffect.name);
+            ImGui::SliderInt("(Effect Index)", &currentBackgroundEffect, 0, backgroundEffects.size()-1);
+            ImGui::InputFloat4("parameter 1", (float*)&selectedEffect.data.data1);
+            ImGui::InputFloat4("parameter 2", (float*)&selectedEffect.data.data2);
+            ImGui::InputFloat4("parameter 3", (float*)&selectedEffect.data.data3);
+            ImGui::InputFloat4("parameter 4", (float*)&selectedEffect.data.data4);
+            ImGui::End();
+        }
+        //ImGui::ShowDemoWindow(); - demo window
         ImGui::Render();
         draw();
     }
