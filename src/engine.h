@@ -3,6 +3,7 @@
 #pragma once
 #include <types.h>
 #include <descriptors.h>
+#include <loader.h>
 struct ComputePushConstants {
 	glm::vec4 data1;
 	glm::vec4 data2;
@@ -68,6 +69,7 @@ public:
 	VmaAllocator _vulkanMemoryAllocator;
 
 	AllocatedImage _allocatedImage;
+	AllocatedImage _depthImage;
 	VkExtent2D _vulkanImageExtent2D;
 
 	DescriptorAllocator globalDescriptorAllocator;
@@ -87,12 +89,20 @@ public:
 	VkPipelineLayout _vulkanTrianglePipelineLayout;
 	VkPipeline _vulkanTrainglePipeline;
 
+	VkPipelineLayout _vulkanMeshPipelineLayout;
+	VkPipeline _vulkanMeshPipeline;
+	GPUMeshBuffers rectangle;
+
+	std::vector<std::shared_ptr<MeshAsset>> testMeshes;
+
 	void init();
 	void cleanup();
 	void draw();
 	void run();
 	FrameInfo& get_current_frame() { return _frames[_frameNumber % FRAME_OVERLAP]; };
 	void immediate_command_submit(std::function<void(VkCommandBuffer vulkanCommandBuffer)>&& function);
+	AllocatedBuffer create_allocated_buffer(size_t allocationSize, VkBufferUsageFlags bufferUsageFlags, VmaMemoryUsage allocationMemoryUsage);
+	GPUMeshBuffers upload_mesh_to_GPU(std::span<uint32_t> indices, std::span<Vertex3D> vertices);
 private:
 	void vulkan_init();
 	void swapchain_init();
@@ -104,9 +114,12 @@ private:
 	void pipelines_init();
 	void background_pipelines_init();
 	void triangle_pipeline_init();
+	void mesh_pipeline_init();
 	void imgui_init();
 	void draw_background(VkCommandBuffer vulkanCommandBuffer);
 	void draw_imgui(VkCommandBuffer vulkanCommandBuffer, VkImageView targetVulkanImageView);
 	void draw_geometry(VkCommandBuffer vulkanCommandBuffer);
+	void default_data_init();
+	void destroy_allocated_buffer(const AllocatedBuffer& buffer);
 };
 

@@ -13,6 +13,7 @@
 
 #define VMA_IMPLEMENTATION
 #include "vk_mem_alloc.h"
+#include <glm/gtx/transform.hpp>
 
 #include "pipelines.h"
 
@@ -48,6 +49,7 @@ void VulkanEngine::init()
     descriptors_init();
     pipelines_init();
     imgui_init();
+    default_data_init();
 
     _isInitialized = true;
 }
@@ -96,6 +98,21 @@ void VulkanEngine::vulkan_init() {
     vulkanMemoryAllocatorInfo.flags = VMA_ALLOCATOR_CREATE_BUFFER_DEVICE_ADDRESS_BIT;
     vmaCreateAllocator(&vulkanMemoryAllocatorInfo, &_vulkanMemoryAllocator);
     _mainDeletionQueue.push_back_deleting_function([&]() {
+        fmt::println("{}", VK_MAX_MEMORY_HEAPS);
+        for (int i = 0; i < VK_MAX_MEMORY_HEAPS; i++) {
+            uint32_t heapIndex = 0;
+            VmaBudget budgets[VK_MAX_MEMORY_HEAPS];
+            vmaGetHeapBudgets(_vulkanMemoryAllocator, budgets);
+            printf("My heap currently has %u allocations taking %llu B,\n",
+                budgets[heapIndex].statistics.allocationCount,
+                budgets[heapIndex].statistics.allocationBytes);
+            printf("allocated out of %u Vulkan device memory blocks taking %llu B,\n",
+                budgets[heapIndex].statistics.blockCount,
+                budgets[heapIndex].statistics.blockBytes);
+            printf("Vulkan reports total usage %llu B with budget %llu B.\n",
+                budgets[heapIndex].usage,
+                budgets[heapIndex].budget);
+        }
         vmaDestroyAllocator(_vulkanMemoryAllocator);
         });
 }
@@ -106,26 +123,43 @@ void VulkanEngine::swapchain_init() {
     
     _allocatedImage.vulkanImageFormat = VK_FORMAT_R16G16B16A16_SFLOAT;
     _allocatedImage.vulkanImageExtent3D = vulkanImageExtent3D;
-    
+        
     VkImageUsageFlags vulkanImageUsageFlags{};
     vulkanImageUsageFlags |= VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
     vulkanImageUsageFlags |= VK_IMAGE_USAGE_TRANSFER_DST_BIT;
     vulkanImageUsageFlags |= VK_IMAGE_USAGE_STORAGE_BIT;
     vulkanImageUsageFlags |= VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+
     VkImageCreateInfo vulkanImageCreateInfo = vkinit::image_create_info(_allocatedImage.vulkanImageFormat, vulkanImageUsageFlags, vulkanImageExtent3D);
-    
+
     VmaAllocationCreateInfo vulkanMemoryAllocationCreateInfo = {};
     vulkanMemoryAllocationCreateInfo.usage = VMA_MEMORY_USAGE_GPU_ONLY;
     vulkanMemoryAllocationCreateInfo.requiredFlags = VkMemoryPropertyFlags(VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
 
     vmaCreateImage(_vulkanMemoryAllocator, &vulkanImageCreateInfo, &vulkanMemoryAllocationCreateInfo, &_allocatedImage.vulkanImage, &_allocatedImage.vulkanMemoryAllocation, nullptr);
-
+    
     VkImageViewCreateInfo vulkanImageViewCreateInfo = vkinit::imageview_create_info(_allocatedImage.vulkanImageFormat, _allocatedImage.vulkanImage, VK_IMAGE_ASPECT_COLOR_BIT);
     VK_CHECK(vkCreateImageView(_vulkanDevice, &vulkanImageViewCreateInfo, nullptr, &_allocatedImage.vulkanImageView));
 
+    //z-buffering
+    _depthImage.vulkanImageFormat = VK_FORMAT_D32_SFLOAT;
+    _depthImage.vulkanImageExtent3D = vulkanImageExtent3D;
+    VkImageUsageFlags vulkanDepthImageUsageFlags{};
+    vulkanDepthImageUsageFlags |= VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
+    VkImageCreateInfo vulkanDepthImageCreateInfo = vkinit::image_create_info(_depthImage.vulkanImageFormat, vulkanDepthImageUsageFlags, vulkanImageExtent3D);
+    vmaCreateImage(_vulkanMemoryAllocator, &vulkanDepthImageCreateInfo, &vulkanMemoryAllocationCreateInfo, &_depthImage.vulkanImage, &_depthImage.vulkanMemoryAllocation, nullptr);
+
+    VkImageViewCreateInfo depthImageViewCreateInfo = vkinit::imageview_create_info(_depthImage.vulkanImageFormat, _depthImage.vulkanImage, VK_IMAGE_ASPECT_DEPTH_BIT);
+
+    VK_CHECK(vkCreateImageView(_vulkanDevice, &depthImageViewCreateInfo, nullptr, &_depthImage.vulkanImageView));
+
     _mainDeletionQueue.push_back_deleting_function([=]() {
         vkDestroyImageView(_vulkanDevice, _allocatedImage.vulkanImageView, nullptr);
-        vmaDestroyImage(_vulkanMemoryAllocator, _allocatedImage.vulkanImage, _allocatedImage.vulkanMemoryAllocation); });
+        vmaDestroyImage(_vulkanMemoryAllocator, _allocatedImage.vulkanImage, _allocatedImage.vulkanMemoryAllocation); 
+
+        vkDestroyImageView(_vulkanDevice, _depthImage.vulkanImageView, nullptr);
+        vmaDestroyImage(_vulkanMemoryAllocator, _depthImage.vulkanImage, _depthImage.vulkanMemoryAllocation);
+        });
 }
 void VulkanEngine::swapchain_create(uint32_t swapchainWidth, uint32_t swapchainHeight) {
     vkb::SwapchainBuilder vulkanSwapchainBuilder{ _selectedGPU,_vulkanDevice,_windowSurface };
@@ -214,15 +248,17 @@ void VulkanEngine::descriptors_init() {
 }
 
 void VulkanEngine::pipelines_init() {
+    // computes
     background_pipelines_init();
-    triangle_pipeline_init();
+    // graphics
+    //triangle_pipeline_init();
+    mesh_pipeline_init();
 }
 
 void VulkanEngine::triangle_pipeline_init() {
     VkShaderModule vulkanTriangleFragShaderModule;
     if (!vkutil::load_shader_module("../../vulkan-base/shaders/colored_triangle.frag.spv", _vulkanDevice, &vulkanTriangleFragShaderModule)) // only for windows + msvc folders
         fmt::print("Error during fragment shaders build \n");
-
 
     VkShaderModule vulkanTriangleVertShaderModule;
     if (!vkutil::load_shader_module("../../vulkan-base/shaders/colored_triangle.vert.spv", _vulkanDevice, &vulkanTriangleVertShaderModule)) // only for windows + msvc folders
@@ -251,6 +287,49 @@ void VulkanEngine::triangle_pipeline_init() {
     _mainDeletionQueue.push_back_deleting_function([&]() {
         vkDestroyPipelineLayout(_vulkanDevice, _vulkanTrianglePipelineLayout, nullptr);
         vkDestroyPipeline(_vulkanDevice, _vulkanTrainglePipeline, nullptr);
+        });
+}
+
+void VulkanEngine::mesh_pipeline_init() {
+    VkShaderModule vulkanTriangleFragShaderModule;
+    if (!vkutil::load_shader_module("../../vulkan-base/shaders/colored_triangle.frag.spv", _vulkanDevice, &vulkanTriangleFragShaderModule)) // only for windows + msvc folders
+        fmt::print("Error during fragment shaders build \n");
+
+    VkShaderModule vulkanTriangleVertShaderModule;
+    if (!vkutil::load_shader_module("../../vulkan-base/shaders/colored_triangle_mesh.vert.spv", _vulkanDevice, &vulkanTriangleVertShaderModule)) // only for windows + msvc folders
+        fmt::print("Error during vertex shaders build \n");
+
+    VkPushConstantRange vulkanPushConstantBufferRange{};
+    vulkanPushConstantBufferRange.offset = 0;
+    vulkanPushConstantBufferRange.size = sizeof(GPUDrawingPushConstants);
+    vulkanPushConstantBufferRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+
+    VkPipelineLayoutCreateInfo vulkanPipelineLayoutCreateInfo = vkinit::pipeline_layout_create_info();
+    vulkanPipelineLayoutCreateInfo.pPushConstantRanges = &vulkanPushConstantBufferRange;
+    vulkanPipelineLayoutCreateInfo.pushConstantRangeCount = 1;
+    VK_CHECK(vkCreatePipelineLayout(_vulkanDevice, &vulkanPipelineLayoutCreateInfo, nullptr, &_vulkanMeshPipelineLayout));
+
+    PipelineBuilder pipelineBuilder;
+    pipelineBuilder._vulkanPipelineLayout = _vulkanMeshPipelineLayout;
+    pipelineBuilder.set_shaders(vulkanTriangleVertShaderModule, vulkanTriangleFragShaderModule);
+    pipelineBuilder.set_input_topology(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST);
+    pipelineBuilder.set_polygon_mode(VK_POLYGON_MODE_FILL);
+    pipelineBuilder.set_cull_mode(VK_CULL_MODE_NONE, VK_FRONT_FACE_CLOCKWISE);
+    pipelineBuilder.set_multisampling_none();
+    pipelineBuilder.disable_blending();
+    //pipelineBuilder.disable_depth_test();
+    pipelineBuilder.enable_depth_test(true, VK_COMPARE_OP_GREATER_OR_EQUAL);
+    pipelineBuilder.set_color_attachment_format(_allocatedImage.vulkanImageFormat);
+    pipelineBuilder.set_depth_format(_depthImage.vulkanImageFormat);
+
+    _vulkanMeshPipeline = pipelineBuilder.build_pipeline(_vulkanDevice);
+
+    vkDestroyShaderModule(_vulkanDevice, vulkanTriangleFragShaderModule, nullptr);
+    vkDestroyShaderModule(_vulkanDevice, vulkanTriangleVertShaderModule, nullptr);
+
+    _mainDeletionQueue.push_back_deleting_function([&]() {
+        vkDestroyPipelineLayout(_vulkanDevice, _vulkanMeshPipelineLayout, nullptr);
+        vkDestroyPipeline(_vulkanDevice, _vulkanMeshPipeline, nullptr);
         });
 }
 
@@ -369,7 +448,45 @@ void VulkanEngine::imgui_init() {
         ImGui_ImplVulkan_Shutdown();
         });
 }
+
+AllocatedBuffer VulkanEngine::create_allocated_buffer(size_t allocationSize, VkBufferUsageFlags bufferUsageFlags, VmaMemoryUsage allocationMemoryUsage) {
+    VkBufferCreateInfo vulkanBufferCreateInfo = { .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO };
+    vulkanBufferCreateInfo.pNext = nullptr;
+    vulkanBufferCreateInfo.size = allocationSize;
+    vulkanBufferCreateInfo.usage = bufferUsageFlags;
+
+    VmaAllocationCreateInfo vulkanMemoryAllocationCreateInfo = {};
+    vulkanMemoryAllocationCreateInfo.usage = allocationMemoryUsage;
+    vulkanMemoryAllocationCreateInfo.flags = VMA_ALLOCATION_CREATE_MAPPED_BIT;
+
+    AllocatedBuffer newAllocatedBuffer;
+    VK_CHECK(vmaCreateBuffer(_vulkanMemoryAllocator, &vulkanBufferCreateInfo, &vulkanMemoryAllocationCreateInfo,
+        &newAllocatedBuffer.vulkanBuffer, &newAllocatedBuffer.vulkanMemoryAllocation, &newAllocatedBuffer.vulkanMemoryAllocationInfo));
+    return newAllocatedBuffer;
+}
+
+void VulkanEngine::default_data_init() {
+    /*std::array<Vertex3D, 4> rectangle_vertices;
+    rectangle_vertices[0].position = { 0.5,-0.5,0 };
+    rectangle_vertices[1].position = { 0.5,0.5,0 };
+    rectangle_vertices[2].position = { -0.5,-0.5,0 };
+    rectangle_vertices[3].position = { -0.5,0.5,0 };
+    rectangle_vertices[0].color = { 0,0,0,1 };
+    rectangle_vertices[1].color = { 0.5,0.5,0.5,1 };
+    rectangle_vertices[2].color = { 1,0,0,1 };
+    rectangle_vertices[3].color = { 0,1,0,1 };
+    std::array<uint32_t, 6> rectangle_indices;
+    rectangle_indices[0] = 0;
+    rectangle_indices[1] = 1;
+    rectangle_indices[2] = 2;
+    rectangle_indices[3] = 2;
+    rectangle_indices[4] = 1;
+    rectangle_indices[5] = 3;
+    rectangle = upload_mesh_to_GPU(rectangle_indices, rectangle_vertices);*/
+    testMeshes = loadGLTFMeshes(this, "../../vulkan-base/assets/basicmesh.glb").value();
+}
 #pragma endregion 
+#pragma region Cleanup
 
 void VulkanEngine::cleanup()
 {
@@ -394,7 +511,7 @@ void VulkanEngine::cleanup()
     }
     loadedEngine = nullptr;
 }
-
+#pragma endregion
 #pragma region Runtime
 void VulkanEngine::draw()
 {
@@ -422,6 +539,8 @@ void VulkanEngine::draw()
     draw_background(vulkanCommandBuffer);
 
     vkutil::image_transition(vulkanCommandBuffer, _allocatedImage.vulkanImage, VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
+    vkutil::image_transition(vulkanCommandBuffer, _depthImage.vulkanImage, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL);
+
     draw_geometry(vulkanCommandBuffer);
 
     vkutil::image_transition(vulkanCommandBuffer, _allocatedImage.vulkanImage, VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
@@ -490,9 +609,12 @@ void VulkanEngine::draw_imgui(VkCommandBuffer vulkanCommandBuffer, VkImageView t
 }
 
 void VulkanEngine::draw_geometry(VkCommandBuffer vulkanCommandBuffer) {
-    VkRenderingAttachmentInfo vulkanRenderingAttachmentInfo = vkinit::attachment_info(_allocatedImage.vulkanImageView, nullptr, VK_IMAGE_LAYOUT_GENERAL);
-    VkRenderingInfo vulkanRenderingInfo = vkinit::rendering_info(_vulkanImageExtent2D, &vulkanRenderingAttachmentInfo, nullptr);
+    VkRenderingAttachmentInfo colorAttachment = vkinit::attachment_info(_allocatedImage.vulkanImageView, nullptr, VK_IMAGE_LAYOUT_GENERAL);
+    VkRenderingAttachmentInfo depthAttachment = vkinit::depth_attachment_info(_depthImage.vulkanImageView, VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL);
+    VkRenderingInfo vulkanRenderingInfo = vkinit::rendering_info(_vulkanImageExtent2D, &colorAttachment, &depthAttachment);
     vkCmdBeginRendering(vulkanCommandBuffer, &vulkanRenderingInfo);
+    /*
+    //drawing a triangle (if so the next part should be befire vkcmdbindpipeline
     vkCmdBindPipeline(vulkanCommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, _vulkanTrainglePipeline);
     VkViewport vulkanViewport = {};
     vulkanViewport.x = 0;
@@ -509,6 +631,43 @@ void VulkanEngine::draw_geometry(VkCommandBuffer vulkanCommandBuffer) {
     vulkanScissor.extent.height = _vulkanImageExtent2D.height;
     vkCmdSetScissor(vulkanCommandBuffer, 0, 1, &vulkanScissor);
     vkCmdDraw(vulkanCommandBuffer, 3, 1, 0, 0);
+    */
+
+    // drawing more complex shapes
+    vkCmdBindPipeline(vulkanCommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, _vulkanMeshPipeline);
+    VkViewport vulkanViewport = {};
+    vulkanViewport.x = 0;
+    vulkanViewport.y = 0;
+    vulkanViewport.width = _vulkanImageExtent2D.width;
+    vulkanViewport.height = _vulkanImageExtent2D.height;
+    vulkanViewport.minDepth = 0.f;
+    vulkanViewport.maxDepth = 1.f;
+    vkCmdSetViewport(vulkanCommandBuffer, 0, 1, &vulkanViewport);
+    VkRect2D vulkanScissor = {};
+    vulkanScissor.offset.x = 0;
+    vulkanScissor.offset.y = 0;
+    vulkanScissor.extent.width = _vulkanImageExtent2D.width;
+    vulkanScissor.extent.height = _vulkanImageExtent2D.height;
+    vkCmdSetScissor(vulkanCommandBuffer, 0, 1, &vulkanScissor);
+    GPUDrawingPushConstants gpuDrawPushConstants;
+    /*gpuDrawPushConstants.worldMatrix = glm::mat4(1.f);
+    gpuDrawPushConstants.vertexBuffer = rectangle.vertexBufferAdress;
+    vkCmdPushConstants(vulkanCommandBuffer, _vulkanMeshPipelineLayout, VK_SHADER_STAGE_VERTEX_BIT,  0, sizeof(GPUDrawingPushConstants), &gpuDrawPushConstants);
+    vkCmdBindIndexBuffer(vulkanCommandBuffer, rectangle.indexBuffer.vulkanBuffer, 0, VK_INDEX_TYPE_UINT32);
+    // drawing a rectangle
+    vkCmdDrawIndexed(vulkanCommandBuffer,6,1,0,0,0);*/
+
+    // flipping viewport because Y axis in Vulkan look down by default
+    glm::mat4 viewMatrix = glm::translate(glm::vec3{ 0, 0, -5 });
+    glm::mat4 projectionMatrix = glm::perspective(glm::radians(70.f), (float)_vulkanImageExtent2D.width / (float)_vulkanImageExtent2D.height, 10000.f, 0.1f);
+    projectionMatrix[1][1] *= -1;
+    gpuDrawPushConstants.worldMatrix = projectionMatrix * viewMatrix;
+    // drawing a test monke mesh
+    gpuDrawPushConstants.vertexBuffer = testMeshes[2]->meshBuffers.vertexBufferAdress;
+    vkCmdPushConstants(vulkanCommandBuffer, _vulkanMeshPipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(GPUDrawingPushConstants), &gpuDrawPushConstants);
+    vkCmdBindIndexBuffer(vulkanCommandBuffer, testMeshes[2]->meshBuffers.indexBuffer.vulkanBuffer, 0, VK_INDEX_TYPE_UINT32);
+    vkCmdDrawIndexed(vulkanCommandBuffer, testMeshes[2]->surfaces[0].count, 1, testMeshes[2]->surfaces[0].startIndex, 0, 0);
+
     vkCmdEndRendering(vulkanCommandBuffer);
 }
 
@@ -551,9 +710,13 @@ void VulkanEngine::run()
 }
 #pragma endregion
 
+void VulkanEngine::destroy_allocated_buffer(const AllocatedBuffer& buffer) {
+    vmaDestroyBuffer(_vulkanMemoryAllocator, buffer.vulkanBuffer, buffer.vulkanMemoryAllocation);
+}
+
 void VulkanEngine::immediate_command_submit(std::function<void(VkCommandBuffer vulkanCommandBuffer)>&& function) {
-    VK_CHECK(vkResetFences(_vulkanDevice,1,&_immediateVulkanFence));
-    VK_CHECK(vkResetCommandBuffer(_immediateVulkanCommandBuffer,0));
+    VK_CHECK(vkResetFences(_vulkanDevice, 1, &_immediateVulkanFence));
+    VK_CHECK(vkResetCommandBuffer(_immediateVulkanCommandBuffer, 0));
     VkCommandBuffer vulkanCommandBuffer = _immediateVulkanCommandBuffer;
     VkCommandBufferBeginInfo vulkanCommandBufferBeginInfo = vkinit::command_buffer_begin_info(VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT);
     VK_CHECK(vkBeginCommandBuffer(vulkanCommandBuffer, &vulkanCommandBufferBeginInfo));
@@ -562,5 +725,45 @@ void VulkanEngine::immediate_command_submit(std::function<void(VkCommandBuffer v
     VkCommandBufferSubmitInfo vulkanCommandBufferSubmitInfo = vkinit::command_buffer_submit_info(vulkanCommandBuffer);
     VkSubmitInfo2 vulkanSubmitInfo = vkinit::submit_info(&vulkanCommandBufferSubmitInfo, nullptr, nullptr);
     VK_CHECK(vkQueueSubmit2(_vulkanGraphicsQueue, 1, &vulkanSubmitInfo, _immediateVulkanFence));
-    VK_CHECK(vkWaitForFences(_vulkanDevice,1,&_immediateVulkanFence,true,1e+9-1));
+    VK_CHECK(vkWaitForFences(_vulkanDevice, 1, &_immediateVulkanFence, true, 1e+9 - 1));
+}
+
+GPUMeshBuffers VulkanEngine::upload_mesh_to_GPU(std::span<uint32_t> indices, std::span<Vertex3D> vertices) {
+    const size_t vertexBufferSize = vertices.size() * sizeof(Vertex3D);
+    const size_t indexBufferSize = indices.size() * sizeof(uint32_t);
+    GPUMeshBuffers createdSurface;
+    createdSurface.vertexBuffer = create_allocated_buffer(vertexBufferSize,
+        VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
+        VMA_MEMORY_USAGE_GPU_ONLY);
+    VkBufferDeviceAddressInfo vulkanBufferDeviceAdressInfo{ .sType = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO,
+                                                            .buffer = createdSurface.vertexBuffer.vulkanBuffer };
+    createdSurface.vertexBufferAdress = vkGetBufferDeviceAddress(_vulkanDevice, &vulkanBufferDeviceAdressInfo);
+    createdSurface.indexBuffer = create_allocated_buffer(indexBufferSize,
+        VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+        VMA_MEMORY_USAGE_GPU_ONLY);
+    AllocatedBuffer stagingBuffer = create_allocated_buffer(vertexBufferSize + indexBufferSize,
+        VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+        VMA_MEMORY_USAGE_CPU_ONLY);
+    void* data = stagingBuffer.vulkanMemoryAllocation->GetMappedData();
+    memcpy(data, vertices.data(), vertexBufferSize);
+    memcpy((char*)data + vertexBufferSize, indices.data(), indexBufferSize);
+    immediate_command_submit([&](VkCommandBuffer vulkanCommandBuffer) {
+        VkBufferCopy vertexCopy{ 0 };
+        vertexCopy.dstOffset = 0;
+        vertexCopy.srcOffset = 0;
+        vertexCopy.size = vertexBufferSize;
+        vkCmdCopyBuffer(vulkanCommandBuffer, stagingBuffer.vulkanBuffer, createdSurface.vertexBuffer.vulkanBuffer, 1, &vertexCopy);
+        VkBufferCopy indexCopy{ 0 };
+        indexCopy.dstOffset = 0;
+        indexCopy.srcOffset = vertexBufferSize;
+        indexCopy.size = indexBufferSize;
+        vkCmdCopyBuffer(vulkanCommandBuffer, stagingBuffer.vulkanBuffer, createdSurface.indexBuffer.vulkanBuffer, 1, &indexCopy);
+        });
+    destroy_allocated_buffer(stagingBuffer);
+    _mainDeletionQueue.push_back_deleting_function([=] {
+        destroy_allocated_buffer(createdSurface.vertexBuffer);
+        destroy_allocated_buffer(createdSurface.indexBuffer);
+        });
+    return createdSurface;
+    // using gradual gpu-cpu-gpu logic instead of more efficient background threading for simplicity
 }

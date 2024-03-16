@@ -109,6 +109,17 @@ void PipelineBuilder::set_depth_format(VkFormat vulkanFormat)
 {
 	_vulkanPipelineRenderingInfo.depthAttachmentFormat = vulkanFormat;
 }
+void PipelineBuilder::enable_depth_test(bool depthWriteEnable, VkCompareOp compareOp) {
+	_vulkanPipelineDepthStencil.depthTestEnable = VK_TRUE;
+	_vulkanPipelineDepthStencil.depthWriteEnable = depthWriteEnable;
+	_vulkanPipelineDepthStencil.depthCompareOp = compareOp;
+	_vulkanPipelineDepthStencil.depthBoundsTestEnable = VK_FALSE;
+	_vulkanPipelineDepthStencil.stencilTestEnable = VK_FALSE;
+	_vulkanPipelineDepthStencil.front = {};
+	_vulkanPipelineDepthStencil.back = {};
+	_vulkanPipelineDepthStencil.minDepthBounds = 0.f;
+	_vulkanPipelineDepthStencil.maxDepthBounds = 1.f;
+}
 void PipelineBuilder::disable_depth_test() {
 	_vulkanPipelineDepthStencil.depthTestEnable = VK_FALSE;
 	_vulkanPipelineDepthStencil.depthWriteEnable = VK_FALSE;

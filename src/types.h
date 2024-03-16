@@ -33,3 +33,25 @@ struct AllocatedImage {
     VkExtent3D vulkanImageExtent3D;
     VkFormat vulkanImageFormat;
 };
+struct AllocatedBuffer {
+    VkBuffer vulkanBuffer;
+    VmaAllocation vulkanMemoryAllocation;
+    VmaAllocationInfo vulkanMemoryAllocationInfo;
+};
+struct Vertex3D {
+    glm::vec3 position;
+    float uv_x;
+    glm::vec3 normal;
+    float uv_y;
+    glm::vec4 color;
+};
+// uv_x and uv_y are interleaved because of gpu alignment limitations
+struct GPUMeshBuffers {
+    AllocatedBuffer indexBuffer;
+    AllocatedBuffer vertexBuffer;
+    VkDeviceAddress vertexBufferAdress;
+};
+struct GPUDrawingPushConstants {
+    glm::mat4 worldMatrix;
+    VkDeviceAddress vertexBuffer;
+};
