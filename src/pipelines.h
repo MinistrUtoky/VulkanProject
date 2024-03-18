@@ -36,4 +36,6 @@ public:
 	void set_depth_format(VkFormat format);
 	void enable_depth_test(bool depthWriteEnable, VkCompareOp vulkanCompareOp);
 	void disable_depth_test();
+	void enable_blending_additive();
+	void enable_blending_alphablend();
 };

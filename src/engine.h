@@ -32,6 +32,7 @@ struct DeletionQueue {
 	}
 };
 struct FrameInfo {
+	ScalableDescriptorAllocator _frameDescriptors;
 	VkCommandPool _vulkanCommandPool;
 	VkCommandBuffer _mainVulkanCommandBuffer;
 	VkSemaphore _vulkanSwapchainSemaphore, _vulkanRenderingSemaphore;
@@ -95,6 +96,13 @@ public:
 
 	std::vector<std::shared_ptr<MeshAsset>> testMeshes;
 
+	bool resizeRequested{ false };
+	VkExtent2D _vulkanDrawExtent;
+	float renderScale = 1.f;
+
+	GPUSceneData sceneData;
+	VkDescriptorSetLayout _gpuSceneDataDescriptorLayout;
+
 	void init();
 	void cleanup();
 	void draw();
@@ -110,6 +118,7 @@ private:
 	void sync_structs_init();
 	void swapchain_create(uint32_t swapchainWidth, uint32_t swapchainHeight);
 	void swapchain_destroy();
+	void swapchain_resize();
 	void descriptors_init();
 	void pipelines_init();
 	void background_pipelines_init();

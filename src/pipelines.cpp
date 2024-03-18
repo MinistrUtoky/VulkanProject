@@ -132,6 +132,29 @@ void PipelineBuilder::disable_depth_test() {
 	_vulkanPipelineDepthStencil.maxDepthBounds = 1.f;
 }
 
+// different blending modes for object transparency and stuff
+void PipelineBuilder::enable_blending_additive() {
+	_vulkanPipelineColorBlendAttachment.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
+	_vulkanPipelineColorBlendAttachment.colorWriteMask = VK_TRUE;
+	_vulkanPipelineColorBlendAttachment.srcColorBlendFactor = VK_BLEND_FACTOR_ONE;
+	_vulkanPipelineColorBlendAttachment.dstColorBlendFactor = VK_BLEND_FACTOR_DST_ALPHA;
+	_vulkanPipelineColorBlendAttachment.colorBlendOp = VK_BLEND_OP_ADD;
+	_vulkanPipelineColorBlendAttachment.srcColorBlendFactor = VK_BLEND_FACTOR_ONE;
+	_vulkanPipelineColorBlendAttachment.dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO;
+	_vulkanPipelineColorBlendAttachment.alphaBlendOp = VK_BLEND_OP_ADD;
+
+}
+void PipelineBuilder::enable_blending_alphablend() {
+	_vulkanPipelineColorBlendAttachment.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
+	_vulkanPipelineColorBlendAttachment.colorWriteMask = VK_TRUE;
+	_vulkanPipelineColorBlendAttachment.srcColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_DST_ALPHA;
+	_vulkanPipelineColorBlendAttachment.dstColorBlendFactor = VK_BLEND_FACTOR_DST_ALPHA;
+	_vulkanPipelineColorBlendAttachment.colorBlendOp = VK_BLEND_OP_ADD;
+	_vulkanPipelineColorBlendAttachment.srcColorBlendFactor = VK_BLEND_FACTOR_ONE;
+	_vulkanPipelineColorBlendAttachment.dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO;
+	_vulkanPipelineColorBlendAttachment.alphaBlendOp = VK_BLEND_OP_ADD;
+}
+
 void PipelineBuilder::clear() {
 	_vulkanPipelineInputAssembler = { .sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO };
 	_vulkanPipelineRasterizator = { .sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO };
@@ -142,3 +165,4 @@ void PipelineBuilder::clear() {
 	_vulkanPipelineRenderingInfo = { .sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO };
 	_vulkanPipelineShaderStages.clear();
 }
+

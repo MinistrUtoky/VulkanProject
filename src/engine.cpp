@@ -32,7 +32,7 @@ void VulkanEngine::init()
     loadedEngine = this;
 
     SDL_Init(SDL_INIT_VIDEO);
-    SDL_WindowFlags window_flags = (SDL_WindowFlags)(SDL_WINDOW_VULKAN);
+    SDL_WindowFlags window_flags = (SDL_WindowFlags)(SDL_WINDOW_VULKAN | SDL_WINDOW_RESIZABLE);
 
     _window = SDL_CreateWindow(
         "Geometric Shapes",
@@ -181,6 +181,16 @@ void VulkanEngine::swapchain_destroy() {
     for (int i = 0; i < _vulkanSwapchainImageViews.size(); i++)
         vkDestroyImageView(_vulkanDevice, _vulkanSwapchainImageViews[i], nullptr);
 }
+void VulkanEngine::swapchain_resize() {
+    vkDeviceWaitIdle(_vulkanDevice);
+    swapchain_destroy();
+    int width, height;
+    SDL_GetWindowSize(_window, &width, &height);
+    _windowExtent.width = width;
+    _windowExtent.height = height;
+    swapchain_create(_windowExtent.width, _windowExtent.height);
+    resizeRequested = false;
+}
 
 void VulkanEngine::commands_init() {
     // creating pool and buffer
@@ -191,12 +201,6 @@ void VulkanEngine::commands_init() {
     vulkanCommandPoolInfo.queueFamilyIndex = _vulkanGraphicsQueueFamily;
     for (int i = 0; i < FRAME_OVERLAP; i++) {
         VK_CHECK(vkCreateCommandPool(_vulkanDevice, &vulkanCommandPoolInfo, nullptr, &_frames[i]._vulkanCommandPool));
-        /*VkCommandBufferAllocateInfo commandAllocationInfo = {};
-        commandAllocationInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
-        commandAllocationInfo.pNext = nullptr;
-        commandAllocationInfo.commandPool = _frames[i]._vulkanCommandPool;
-        commandAllocationInfo.commandBufferCount = 1;
-        commandAllocationInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY; */
         VkCommandBufferAllocateInfo commandAllocationInfo = vkinit::command_buffer_allocate_info(_frames[i]._vulkanCommandPool, 1); // we've put the above statement into initializers;
         VK_CHECK(vkAllocateCommandBuffers(_vulkanDevice, &commandAllocationInfo, &_frames[i]._mainVulkanCommandBuffer));
     }
@@ -232,19 +236,30 @@ void VulkanEngine::descriptors_init() {
         descriptorLayoutBuilder.add_binding(0, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE); 
         _vulkanImageDescriptorSetLayout = descriptorLayoutBuilder.build(_vulkanDevice, VK_SHADER_STAGE_COMPUTE_BIT);
     }
+    {
+        DescriptorLayoutBuilder descriptorLayoutBuilder;
+        descriptorLayoutBuilder.add_binding(0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);
+        _gpuSceneDataDescriptorLayout = descriptorLayoutBuilder.build(_vulkanDevice, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT);
+    }
     _vulkanImageDescriptorSet = globalDescriptorAllocator.allocate(_vulkanDevice, _vulkanImageDescriptorSetLayout);
-    VkDescriptorImageInfo vulkanDescriptorImageInfo{};
-    vulkanDescriptorImageInfo.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
-    vulkanDescriptorImageInfo.imageView = _allocatedImage.vulkanImageView;
-    VkWriteDescriptorSet vulkanImageWriteDescriptorSet = {};
-    vulkanImageWriteDescriptorSet.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    vulkanImageWriteDescriptorSet.pNext = nullptr;
-    vulkanImageWriteDescriptorSet.dstBinding = 0;
-    vulkanImageWriteDescriptorSet.dstSet = _vulkanImageDescriptorSet;
-    vulkanImageWriteDescriptorSet.descriptorCount = 1;
-    vulkanImageWriteDescriptorSet.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
-    vulkanImageWriteDescriptorSet.pImageInfo = &vulkanDescriptorImageInfo;
-    vkUpdateDescriptorSets(_vulkanDevice, 1, &vulkanImageWriteDescriptorSet, 0, nullptr);
+    // old descriptor with no growth possible
+
+    DescriptorWriter descriptorWriter;
+    descriptorWriter.write_image(0, _allocatedImage.vulkanImageView, VK_NULL_HANDLE, VK_IMAGE_LAYOUT_GENERAL, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE);
+    descriptorWriter.update_set(_vulkanDevice, _vulkanImageDescriptorSet); 
+    for (int i = 0; i < FRAME_OVERLAP; i++) {
+        std::vector<ScalableDescriptorAllocator::PoolSizeRatio2> frameSizes = {
+            { VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 3 },
+            { VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 3 },
+            { VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 3 },
+            { VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 4 }
+        };
+        _frames[i]._frameDescriptors = ScalableDescriptorAllocator{};
+        _frames[i]._frameDescriptors.initialize_pools(_vulkanDevice, 1e+3, frameSizes);
+        _mainDeletionQueue.push_back_deleting_function([&, i]() {
+            _frames[i]._frameDescriptors.destroy_pools(_vulkanDevice);
+            });
+    }
 }
 
 void VulkanEngine::pipelines_init() {
@@ -291,6 +306,7 @@ void VulkanEngine::triangle_pipeline_init() {
 }
 
 void VulkanEngine::mesh_pipeline_init() {
+
     VkShaderModule vulkanTriangleFragShaderModule;
     if (!vkutil::load_shader_module("../../vulkan-base/shaders/colored_triangle.frag.spv", _vulkanDevice, &vulkanTriangleFragShaderModule)) // only for windows + msvc folders
         fmt::print("Error during fragment shaders build \n");
@@ -316,7 +332,8 @@ void VulkanEngine::mesh_pipeline_init() {
     pipelineBuilder.set_polygon_mode(VK_POLYGON_MODE_FILL);
     pipelineBuilder.set_cull_mode(VK_CULL_MODE_NONE, VK_FRONT_FACE_CLOCKWISE);
     pipelineBuilder.set_multisampling_none();
-    pipelineBuilder.disable_blending();
+    //pipelineBuilder.disable_blending();
+    pipelineBuilder.enable_blending_additive();
     //pipelineBuilder.disable_depth_test();
     pipelineBuilder.enable_depth_test(true, VK_COMPARE_OP_GREATER_OR_EQUAL);
     pipelineBuilder.set_color_attachment_format(_allocatedImage.vulkanImageFormat);
@@ -493,8 +510,9 @@ void VulkanEngine::cleanup()
     if (_isInitialized) {
         vkDeviceWaitIdle(_vulkanDevice);
 
-        _mainDeletionQueue.flushAll();
-
+        for (int i = 0; i < FRAME_OVERLAP; i++) {
+            _frames[i]._deletionQueue.flushAll();
+        }
         for (int i = 0; i < FRAME_OVERLAP; i++) {
             vkDestroyCommandPool(_vulkanDevice, _frames[i]._vulkanCommandPool, nullptr);
             vkDestroyFence(_vulkanDevice, _frames[i]._vulkanRenderingFence, nullptr);
@@ -515,16 +533,25 @@ void VulkanEngine::cleanup()
 #pragma region Runtime
 void VulkanEngine::draw()
 {
+    _vulkanDrawExtent.height = std::min(_vulkanSwapchainExtent.height, _allocatedImage.vulkanImageExtent3D.height) * renderScale;
+    _vulkanDrawExtent.width = std::min(_vulkanSwapchainExtent.width, _allocatedImage.vulkanImageExtent3D.width) * renderScale;
     // we wait for previous frame
     VK_CHECK(vkWaitForFences(_vulkanDevice, 1, &get_current_frame()._vulkanRenderingFence, true, 1e+9));
     //deleting previous frame data
     get_current_frame()._deletionQueue.flushAll();
+    get_current_frame()._frameDescriptors.clear_pools(_vulkanDevice);
 
     VK_CHECK(vkResetFences(_vulkanDevice, 1, &get_current_frame()._vulkanRenderingFence));
     // we get image index
     uint32_t vulkanSwapchainImgIndex;
-    VK_CHECK(vkAcquireNextImageKHR(_vulkanDevice, _vulkanSwapchain, 1e+9, get_current_frame()._vulkanSwapchainSemaphore,
-                                    nullptr, &vulkanSwapchainImgIndex));
+    //VK_CHECK(vkAcquireNextImageKHR(_vulkanDevice, _vulkanSwapchain, 1e+9, get_current_frame()._vulkanSwapchainSemaphore,
+                                    //nullptr, &vulkanSwapchainImgIndex));
+    VkResult result = vkAcquireNextImageKHR(_vulkanDevice, _vulkanSwapchain, 1e+9, get_current_frame()._vulkanSwapchainSemaphore,
+        nullptr, &vulkanSwapchainImgIndex);
+    if (result == VK_ERROR_OUT_OF_DATE_KHR) {
+        resizeRequested = true;
+        return;
+    }
     // resetting command buffer
     VkCommandBuffer vulkanCommandBuffer = get_current_frame()._mainVulkanCommandBuffer;
     VK_CHECK(vkResetCommandBuffer(vulkanCommandBuffer, 0));
@@ -567,7 +594,10 @@ void VulkanEngine::draw()
     vulkanPresentInfo.pWaitSemaphores = &get_current_frame()._vulkanRenderingSemaphore;
     vulkanPresentInfo.waitSemaphoreCount = 1;
     vulkanPresentInfo.pImageIndices = &vulkanSwapchainImgIndex;
-    VK_CHECK(vkQueuePresentKHR(_vulkanGraphicsQueue, &vulkanPresentInfo));
+    //VK_CHECK(vkQueuePresentKHR(_vulkanGraphicsQueue, &vulkanPresentInfo));
+    VkResult presentResult = vkQueuePresentKHR(_vulkanGraphicsQueue, &vulkanPresentInfo);
+    if (presentResult == VK_ERROR_OUT_OF_DATE_KHR)
+        resizeRequested = true;
 
     _frameNumber++;
 }
@@ -613,25 +643,6 @@ void VulkanEngine::draw_geometry(VkCommandBuffer vulkanCommandBuffer) {
     VkRenderingAttachmentInfo depthAttachment = vkinit::depth_attachment_info(_depthImage.vulkanImageView, VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL);
     VkRenderingInfo vulkanRenderingInfo = vkinit::rendering_info(_vulkanImageExtent2D, &colorAttachment, &depthAttachment);
     vkCmdBeginRendering(vulkanCommandBuffer, &vulkanRenderingInfo);
-    /*
-    //drawing a triangle (if so the next part should be befire vkcmdbindpipeline
-    vkCmdBindPipeline(vulkanCommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, _vulkanTrainglePipeline);
-    VkViewport vulkanViewport = {};
-    vulkanViewport.x = 0;
-    vulkanViewport.y = 0;
-    vulkanViewport.width = _vulkanImageExtent2D.width;
-    vulkanViewport.height = _vulkanImageExtent2D.height;
-    vulkanViewport.minDepth = 0.f;
-    vulkanViewport.maxDepth = 1.f;
-    vkCmdSetViewport(vulkanCommandBuffer, 0, 1, &vulkanViewport);
-    VkRect2D vulkanScissor = {};
-    vulkanScissor.offset.x = 0;
-    vulkanScissor.offset.y = 0;
-    vulkanScissor.extent.width = _vulkanImageExtent2D.width;
-    vulkanScissor.extent.height = _vulkanImageExtent2D.height;
-    vkCmdSetScissor(vulkanCommandBuffer, 0, 1, &vulkanScissor);
-    vkCmdDraw(vulkanCommandBuffer, 3, 1, 0, 0);
-    */
 
     // drawing more complex shapes
     vkCmdBindPipeline(vulkanCommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, _vulkanMeshPipeline);
@@ -649,14 +660,9 @@ void VulkanEngine::draw_geometry(VkCommandBuffer vulkanCommandBuffer) {
     vulkanScissor.extent.width = _vulkanImageExtent2D.width;
     vulkanScissor.extent.height = _vulkanImageExtent2D.height;
     vkCmdSetScissor(vulkanCommandBuffer, 0, 1, &vulkanScissor);
-    GPUDrawingPushConstants gpuDrawPushConstants;
-    /*gpuDrawPushConstants.worldMatrix = glm::mat4(1.f);
-    gpuDrawPushConstants.vertexBuffer = rectangle.vertexBufferAdress;
-    vkCmdPushConstants(vulkanCommandBuffer, _vulkanMeshPipelineLayout, VK_SHADER_STAGE_VERTEX_BIT,  0, sizeof(GPUDrawingPushConstants), &gpuDrawPushConstants);
-    vkCmdBindIndexBuffer(vulkanCommandBuffer, rectangle.indexBuffer.vulkanBuffer, 0, VK_INDEX_TYPE_UINT32);
-    // drawing a rectangle
-    vkCmdDrawIndexed(vulkanCommandBuffer,6,1,0,0,0);*/
 
+    GPUDrawingPushConstants gpuDrawPushConstants;
+        
     // flipping viewport because Y axis in Vulkan look down by default
     glm::mat4 viewMatrix = glm::translate(glm::vec3{ 0, 0, -5 });
     glm::mat4 projectionMatrix = glm::perspective(glm::radians(70.f), (float)_vulkanImageExtent2D.width / (float)_vulkanImageExtent2D.height, 10000.f, 0.1f);
@@ -667,6 +673,20 @@ void VulkanEngine::draw_geometry(VkCommandBuffer vulkanCommandBuffer) {
     vkCmdPushConstants(vulkanCommandBuffer, _vulkanMeshPipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(GPUDrawingPushConstants), &gpuDrawPushConstants);
     vkCmdBindIndexBuffer(vulkanCommandBuffer, testMeshes[2]->meshBuffers.indexBuffer.vulkanBuffer, 0, VK_INDEX_TYPE_UINT32);
     vkCmdDrawIndexed(vulkanCommandBuffer, testMeshes[2]->surfaces[0].count, 1, testMeshes[2]->surfaces[0].startIndex, 0, 0);
+    
+    AllocatedBuffer gpuSceneDataBuffer = create_allocated_buffer(sizeof(GPUSceneData),
+                                                                 VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+                                                                 VMA_MEMORY_USAGE_CPU_TO_GPU);
+    get_current_frame()._deletionQueue.push_back_deleting_function([=, this]() {
+        destroy_allocated_buffer(gpuSceneDataBuffer);
+        });
+
+    GPUSceneData* sceneUniformData = (GPUSceneData*)gpuSceneDataBuffer.vulkanMemoryAllocation->GetMappedData();
+    *sceneUniformData = sceneData;
+    VkDescriptorSet globalDescriptor = get_current_frame()._frameDescriptors.allocate(_vulkanDevice, _gpuSceneDataDescriptorLayout);
+    DescriptorWriter descriptorWriter;
+    descriptorWriter.write_buffer(0, gpuSceneDataBuffer.vulkanBuffer, sizeof(GPUSceneData), 0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);
+    descriptorWriter.update_set(_vulkanDevice, globalDescriptor);
 
     vkCmdEndRendering(vulkanCommandBuffer);
 }
@@ -690,10 +710,13 @@ void VulkanEngine::run()
             std::this_thread::sleep_for(std::chrono::milliseconds(100));
             continue;
         }
+        if (resizeRequested)
+            swapchain_resize();
         ImGui_ImplVulkan_NewFrame();
         ImGui_ImplSDL2_NewFrame(_window);
         ImGui::NewFrame();
         if (ImGui::Begin("background")) {
+            ImGui::SliderFloat("Render Scale", &renderScale, 0.3f, 1.f);
             ComputeEffect& selectedEffect = backgroundEffects[currentBackgroundEffect];
             ImGui::Text("Selected effect: ", selectedEffect.name);
             ImGui::SliderInt("(Effect Index)", &currentBackgroundEffect, 0, backgroundEffects.size()-1);
