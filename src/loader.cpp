@@ -87,7 +87,7 @@ std::optional<std::vector<std::shared_ptr<MeshAsset>>> loadGLTFMeshes(VulkanEngi
 			}
 			newMesh.surfaces.push_back(newSurface);
 		}
-		constexpr bool OVERRIDE_COLORS = true;
+		constexpr bool OVERRIDE_COLORS = false;//true;
 		if (OVERRIDE_COLORS) 
 			for (Vertex3D & vertex : vertices) 
 				vertex.color = glm::vec4(vertex.normal, 1.f);

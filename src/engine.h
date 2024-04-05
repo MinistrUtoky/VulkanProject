@@ -16,6 +16,52 @@ struct ComputeEffect {
 	VkPipelineLayout layout;
 	ComputePushConstants data;
 };
+
+struct GLTFMetalRoughness {
+public:
+	struct MaterialConstants {
+		glm::vec4 colorFactors;
+		glm::vec4 metalRoughnessFactors;
+		glm::vec4 extraPadding[14];
+	};
+	struct MaterialResources {
+		AllocatedImage colorImage;
+		VkSampler colorSampler;
+		AllocatedImage metalRoughnessImage;
+		VkSampler metalRoughnessSampler;
+		VkBuffer dataBuffer;
+		uint32_t dataBufferOffset;
+	};
+
+	MaterialPipeline opaqueObjectsPipeline;
+	MaterialPipeline transparentObjectsPipeline;
+	VkDescriptorSetLayout materialDescriptorSetLayout;
+
+	DescriptorWriter descriptorWriter;
+
+	void build_pipelines(VulkanEngine* vulkanEngine);
+	void clear_resources(VkDevice vulkanDevice);
+
+	RenderableMaterial write_material(VkDevice vulkanDevice, MaterialType type, const MaterialResources& resources, ScalableDescriptorAllocator& descriptorAllocator);
+};
+
+struct RenderableObject {
+	uint32_t indexCount;
+	uint32_t firstIndex;
+	VkBuffer indexBuffer;
+
+	RenderableMaterial* renderableMaterial;
+	glm::mat4 objectTransform;
+	VkDeviceAddress vertexBufferAddress;
+};
+struct DrawContext {
+	std::vector<RenderableObject> OpaqueSurfaces;
+};
+struct MeshNode : public HierarchyNode {
+	std::shared_ptr<MeshAsset> meshAsset;
+	virtual void Draw(const glm::mat4& topMatrix, DrawContext& drawContext) override;
+};
+
 struct DeletionQueue {
 	// It's better having arrays of vulkan handles of different types and then delete them from a loop, but this will do for now
 	std::deque<std::function<void()>> deletingFunctions;
@@ -73,7 +119,7 @@ public:
 	AllocatedImage _depthImage;
 	VkExtent2D _vulkanImageExtent2D;
 
-	DescriptorAllocator globalDescriptorAllocator;
+	ScalableDescriptorAllocator globalDescriptorAllocator;
 	VkDescriptorSet _vulkanImageDescriptorSet;
 	VkDescriptorSetLayout _vulkanImageDescriptorSetLayout;
 	
@@ -103,32 +149,54 @@ public:
 	GPUSceneData sceneData;
 	VkDescriptorSetLayout _gpuSceneDataDescriptorLayout;
 
+	AllocatedImage _whiteImage;
+	AllocatedImage _blackImage;
+	AllocatedImage _greyImage;
+	AllocatedImage _errorCheckboardImage;
+
+	VkSampler _defaultSamplerLinear;
+	VkSampler _defaultSamplerNearest;
+
+	VkDescriptorSetLayout _singleImageDescriptorLayout;
+
+	RenderableMaterial defaultMaterialData;
+	GLTFMetalRoughness metalRoughnessMaterial;
+
+	DrawContext mainDrawContext;
+	std::unordered_map<std::string, std::shared_ptr<HierarchyNode>> loadedNodes;
+
 	void init();
 	void cleanup();
 	void draw();
 	void run();
-	FrameInfo& get_current_frame() { return _frames[_frameNumber % FRAME_OVERLAP]; };
-	void immediate_command_submit(std::function<void(VkCommandBuffer vulkanCommandBuffer)>&& function);
 	AllocatedBuffer create_allocated_buffer(size_t allocationSize, VkBufferUsageFlags bufferUsageFlags, VmaMemoryUsage allocationMemoryUsage);
+	AllocatedImage create_allocated_image(VkExtent3D size, VkFormat format, VkImageUsageFlags imageUsageFlags, bool mipmapped = false);
+	AllocatedImage create_allocated_image_with_data(void*data, VkExtent3D size, VkFormat format, VkImageUsageFlags imageUsageFlags, bool mipmapped = false);
 	GPUMeshBuffers upload_mesh_to_GPU(std::span<uint32_t> indices, std::span<Vertex3D> vertices);
+
 private:
 	void vulkan_init();
 	void swapchain_init();
 	void commands_init();
 	void sync_structs_init();
-	void swapchain_create(uint32_t swapchainWidth, uint32_t swapchainHeight);
-	void swapchain_destroy();
-	void swapchain_resize();
 	void descriptors_init();
 	void pipelines_init();
 	void background_pipelines_init();
 	void triangle_pipeline_init();
 	void mesh_pipeline_init();
 	void imgui_init();
+	void default_data_init();
+	void upload_2D_rectangle_to_GPU();
+	void swapchain_create(uint32_t swapchainWidth, uint32_t swapchainHeight);
+	void swapchain_resize();
+	void immediate_command_submit(std::function<void(VkCommandBuffer vulkanCommandBuffer)>&& function);
 	void draw_background(VkCommandBuffer vulkanCommandBuffer);
 	void draw_imgui(VkCommandBuffer vulkanCommandBuffer, VkImageView targetVulkanImageView);
 	void draw_geometry(VkCommandBuffer vulkanCommandBuffer);
-	void default_data_init();
+	void update_scene();
+	FrameInfo& get_current_frame() { return _frames[_frameNumber % FRAME_OVERLAP]; };
 	void destroy_allocated_buffer(const AllocatedBuffer& buffer);
+	void destroy_allocated_image(const AllocatedImage& image);
+	void swapchain_destroy();
 };
 
