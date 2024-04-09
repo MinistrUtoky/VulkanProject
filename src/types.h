@@ -58,7 +58,7 @@ struct GPUDrawingPushConstants {
 struct GPUSceneData {
     glm::mat4 viewMatrix;
     glm::mat4 projectionMatrix;
-    glm::mat4 viewToProjectionMatrix;
+    glm::mat4 viewportProjectionMatrix;
     glm::vec4 ambientColor;
     glm::vec4 sunlightDirection;
     glm::vec4 sunlightColor;

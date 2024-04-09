@@ -4,6 +4,8 @@
 #include <types.h>
 #include <descriptors.h>
 #include <loader.h>
+#include "camera.h";
+
 struct ComputePushConstants {
 	glm::vec4 data1;
 	glm::vec4 data2;
@@ -51,11 +53,13 @@ struct RenderableObject {
 	VkBuffer indexBuffer;
 
 	RenderableMaterial* renderableMaterial;
+	CubicBounds cubicBounds;
 	glm::mat4 objectTransform;
 	VkDeviceAddress vertexBufferAddress;
 };
 struct DrawContext {
-	std::vector<RenderableObject> OpaqueSurfaces;
+	std::vector<RenderableObject> OpaqueObjects;
+    std::vector<RenderableObject> TransparentObjects;
 };
 struct MeshNode : public HierarchyNode {
 	std::shared_ptr<MeshAsset> meshAsset;
@@ -84,6 +88,14 @@ struct FrameInfo {
 	VkSemaphore _vulkanSwapchainSemaphore, _vulkanRenderingSemaphore;
 	VkFence _vulkanRenderingFence;
 	DeletionQueue _deletionQueue;
+};
+
+struct EngineInfo {
+	float fps;
+	int triangleCount;
+	int drawcallCount;
+	float sceneUpdateTime;
+	float meshDrawTime;
 };
 
 constexpr unsigned int FRAME_OVERLAP = 2;
@@ -165,13 +177,21 @@ public:
 	DrawContext mainDrawContext;
 	std::unordered_map<std::string, std::shared_ptr<HierarchyNode>> loadedNodes;
 
+	Camera mainEngineBuiltinCamera;
+
+	std::unordered_map<std::string, std::shared_ptr<GLTFSceneInstance>> existingScenes;
+
+	EngineInfo engineInfo;
+
 	void init();
 	void cleanup();
 	void draw();
 	void run();
 	AllocatedBuffer create_allocated_buffer(size_t allocationSize, VkBufferUsageFlags bufferUsageFlags, VmaMemoryUsage allocationMemoryUsage);
+	void destroy_allocated_buffer(const AllocatedBuffer& buffer);
 	AllocatedImage create_allocated_image(VkExtent3D size, VkFormat format, VkImageUsageFlags imageUsageFlags, bool mipmapped = false);
 	AllocatedImage create_allocated_image_with_data(void*data, VkExtent3D size, VkFormat format, VkImageUsageFlags imageUsageFlags, bool mipmapped = false);
+	void destroy_allocated_image(const AllocatedImage& image);
 	GPUMeshBuffers upload_mesh_to_GPU(std::span<uint32_t> indices, std::span<Vertex3D> vertices);
 
 private:
@@ -195,8 +215,7 @@ private:
 	void draw_geometry(VkCommandBuffer vulkanCommandBuffer);
 	void update_scene();
 	FrameInfo& get_current_frame() { return _frames[_frameNumber % FRAME_OVERLAP]; };
-	void destroy_allocated_buffer(const AllocatedBuffer& buffer);
-	void destroy_allocated_image(const AllocatedImage& image);
 	void swapchain_destroy();
 };
 
+bool isVisible(const RenderableObject& renderableObject, const glm::mat4& viewportToProjectionMatrix);
