@@ -55,14 +55,19 @@ void VulkanEngine::init()
     mainEngineBuiltinCamera.yaw = 0;
     mainEngineBuiltinCamera.pitch = 0;
 
-    std::string someScenePath = { "../../vulkan-base/assets/structure.glb" };
-    std::optional<std::shared_ptr<GLTFSceneInstance>> someScene = loadGLTFScene(this, someScenePath);
-    
-    assert(someScene.has_value());
-
-    existingScenes["some_scene"] = *someScene;
+    create_scene("some_scene", { "../../vulkan-base/assets/structure.glb" });
+    create_scene("teapot", "../../vulkan-base/assets/the_utah_teapot.glb");
+    create_scene("fish", "../../vulkan-base/assets/fish.glb");
+    create_scene("frog", "../../vulkan-base/assets/frog.glb");
+    create_scene("lol", "../../vulkan-base/assets/raidriar_the_god_king_-_infinity_blade.glb");
 
     _isInitialized = true;
+}
+
+void VulkanEngine::create_scene(std::string sceneName, std::string filePath) {
+    std::optional<std::shared_ptr<GLTFSceneInstance>> someScene = loadGLTFScene(this, filePath);
+    assert(someScene.has_value());
+    existingScenes[sceneName] = *someScene;
 }
 
 void VulkanEngine::vulkan_init() {
@@ -288,91 +293,8 @@ void VulkanEngine::pipelines_init() {
     background_pipelines_init();
     // graphics
     //triangle_pipeline_init();
-    mesh_pipeline_init();
+    //mesh_pipeline_init();
     metalRoughnessMaterial.build_pipelines(this);
-}
-
-void VulkanEngine::triangle_pipeline_init() {
-    VkShaderModule vulkanTriangleFragShaderModule;
-    if (!vkutil::load_shader_module("../../vulkan-base/shaders/colored_triangle.frag.spv", _vulkanDevice, &vulkanTriangleFragShaderModule)) // only for windows + msvc folders
-        fmt::print("Error during fragment shaders build \n");
-
-    VkShaderModule vulkanTriangleVertShaderModule;
-    if (!vkutil::load_shader_module("../../vulkan-base/shaders/colored_triangle.vert.spv", _vulkanDevice, &vulkanTriangleVertShaderModule)) // only for windows + msvc folders
-        fmt::print("Error during vertex shaders build \n");
-
-    VkPipelineLayoutCreateInfo vulkanPipelineLayoutCreateInfo = vkinit::pipeline_layout_create_info();
-    VK_CHECK(vkCreatePipelineLayout(_vulkanDevice, &vulkanPipelineLayoutCreateInfo, nullptr, &_vulkanTrianglePipelineLayout));
-
-    PipelineBuilder pipelineBuilder;
-    pipelineBuilder._vulkanPipelineLayout = _vulkanTrianglePipelineLayout;
-    pipelineBuilder.set_shaders(vulkanTriangleVertShaderModule, vulkanTriangleFragShaderModule);
-    pipelineBuilder.set_input_topology(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST);
-    pipelineBuilder.set_polygon_mode(VK_POLYGON_MODE_FILL);
-    pipelineBuilder.set_cull_mode(VK_CULL_MODE_NONE, VK_FRONT_FACE_CLOCKWISE);
-    pipelineBuilder.set_multisampling_none();
-    pipelineBuilder.disable_blending();
-    pipelineBuilder.disable_depth_test();
-    pipelineBuilder.set_color_attachment_format(_allocatedImage.vulkanImageFormat);
-    pipelineBuilder.set_depth_format(VK_FORMAT_UNDEFINED);
-
-    _vulkanTrainglePipeline = pipelineBuilder.build_pipeline(_vulkanDevice);
-
-    vkDestroyShaderModule(_vulkanDevice, vulkanTriangleFragShaderModule, nullptr);
-    vkDestroyShaderModule(_vulkanDevice, vulkanTriangleVertShaderModule, nullptr);
-
-    _mainDeletionQueue.push_back_deleting_function([&]() {
-        vkDestroyPipelineLayout(_vulkanDevice, _vulkanTrianglePipelineLayout, nullptr);
-        vkDestroyPipeline(_vulkanDevice, _vulkanTrainglePipeline, nullptr);
-        });
-}
-
-void VulkanEngine::mesh_pipeline_init() {
-
-    VkShaderModule vulkanTriangleFragShaderModule;
-    if (!vkutil::load_shader_module("../../vulkan-base/shaders/tex_image.frag.spv", _vulkanDevice, &vulkanTriangleFragShaderModule)) // only for windows + msvc folders
-        fmt::print("Error during fragment shaders build \n");
-
-    VkShaderModule vulkanTriangleVertShaderModule;
-    if (!vkutil::load_shader_module("../../vulkan-base/shaders/colored_triangle_mesh.vert.spv", _vulkanDevice, &vulkanTriangleVertShaderModule)) // only for windows + msvc folders
-        fmt::print("Error during vertex shaders build \n");
-
-    VkPushConstantRange vulkanPushConstantBufferRange{};
-    vulkanPushConstantBufferRange.offset = 0;
-    vulkanPushConstantBufferRange.size = sizeof(GPUDrawingPushConstants);
-    vulkanPushConstantBufferRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
-
-    VkPipelineLayoutCreateInfo vulkanPipelineLayoutCreateInfo = vkinit::pipeline_layout_create_info();
-    vulkanPipelineLayoutCreateInfo.pPushConstantRanges = &vulkanPushConstantBufferRange;
-    vulkanPipelineLayoutCreateInfo.pushConstantRangeCount = 1;
-    vulkanPipelineLayoutCreateInfo.pSetLayouts = &_singleImageDescriptorLayout;
-    vulkanPipelineLayoutCreateInfo.setLayoutCount = 1;
-    VK_CHECK(vkCreatePipelineLayout(_vulkanDevice, &vulkanPipelineLayoutCreateInfo, nullptr, &_vulkanMeshPipelineLayout));
-
-    PipelineBuilder pipelineBuilder;
-    pipelineBuilder._vulkanPipelineLayout = _vulkanMeshPipelineLayout;
-    pipelineBuilder.set_shaders(vulkanTriangleVertShaderModule, vulkanTriangleFragShaderModule);
-    pipelineBuilder.set_input_topology(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST);
-    pipelineBuilder.set_polygon_mode(VK_POLYGON_MODE_FILL);
-    pipelineBuilder.set_cull_mode(VK_CULL_MODE_NONE, VK_FRONT_FACE_CLOCKWISE);
-    pipelineBuilder.set_multisampling_none();
-    pipelineBuilder.disable_blending();
-    //pipelineBuilder.enable_blending_alphablend();
-    //pipelineBuilder.enable_blending_additive();
-    //pipelineBuilder.disable_depth_test();
-    pipelineBuilder.enable_depth_test(true, VK_COMPARE_OP_GREATER_OR_EQUAL);
-    pipelineBuilder.set_color_attachment_format(_allocatedImage.vulkanImageFormat);
-    pipelineBuilder.set_depth_format(_depthImage.vulkanImageFormat);
-
-    _vulkanMeshPipeline = pipelineBuilder.build_pipeline(_vulkanDevice);
-
-    vkDestroyShaderModule(_vulkanDevice, vulkanTriangleFragShaderModule, nullptr);
-    vkDestroyShaderModule(_vulkanDevice, vulkanTriangleVertShaderModule, nullptr);
-
-    _mainDeletionQueue.push_back_deleting_function([&]() {
-        vkDestroyPipelineLayout(_vulkanDevice, _vulkanMeshPipelineLayout, nullptr);
-        vkDestroyPipeline(_vulkanDevice, _vulkanMeshPipeline, nullptr);
-        });
 }
 
 void VulkanEngine::background_pipelines_init() {
@@ -391,13 +313,12 @@ void VulkanEngine::background_pipelines_init() {
     VK_CHECK(vkCreatePipelineLayout(_vulkanDevice, &vulkanComputePipelineLayout, nullptr, &_gradientPipelineLayout));
     
     VkShaderModule vulkanComputeGradientShaderModule;
-    if (!vkutil::load_shader_module("../../vulkan-base/shaders/gradient_color.comp.spv", _vulkanDevice, &vulkanComputeGradientShaderModule)) // only for windows + msvc folders
+    if (!vkutil::load_shader_module("../shaders/gradient_color.comp.spv", _vulkanDevice, &vulkanComputeGradientShaderModule)) // only for windows + msvc folders
         fmt::print("Error during compute shaders build \n");
     
     VkShaderModule vulkanComputeNightSkyShaderModule;
-    if (!vkutil::load_shader_module("../../vulkan-base/shaders/sky.comp.spv", _vulkanDevice, &vulkanComputeNightSkyShaderModule)) // only for windows + msvc folders
+    if (!vkutil::load_shader_module("../shaders/sky.comp.spv", _vulkanDevice, &vulkanComputeNightSkyShaderModule)) // only for windows + msvc folders
         fmt::print("Error during compute shaders build \n");
-
 
     VkPipelineShaderStageCreateInfo vulkanPipelineShaderStageCreateInfo{};
     vulkanPipelineShaderStageCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
@@ -532,7 +453,6 @@ void VulkanEngine::default_data_init() {
     samplerCreateInfo.magFilter = VK_FILTER_LINEAR;
     samplerCreateInfo.minFilter = VK_FILTER_LINEAR;
     vkCreateSampler(_vulkanDevice, &samplerCreateInfo, nullptr, &_defaultSamplerLinear);
-    testMeshes = loadGLTFMeshes(this, "../../vulkan-base/assets/basicmesh.glb").value();
 
     GLTFMetalRoughness::MaterialResources materialResources;
     materialResources.colorImage = _whiteImage;
@@ -551,38 +471,9 @@ void VulkanEngine::default_data_init() {
     materialResources.dataBuffer = materialConstants.vulkanBuffer;
     materialResources.dataBufferOffset = 0;
     defaultMaterialData = metalRoughnessMaterial.write_material(_vulkanDevice, MaterialType::MainColor, materialResources, globalDescriptorAllocator);
-
-    for (auto& mesh : testMeshes) {
-        std::shared_ptr<MeshNode> newMeshNode = std::make_shared<MeshNode>();
-        newMeshNode->meshAsset = mesh;
-        newMeshNode->localTransform = glm::mat4{ 1.f };
-        newMeshNode->worldTransform = glm::mat4{ 1.f };
-        for (auto& face : newMeshNode->meshAsset->surfaces) {
-            face.gltfMaterial = std::make_shared<GLTFMaterial>(defaultMaterialData);
-        }
-        loadedNodes[mesh->name] = std::move(newMeshNode);       
-    }
+    //loadTestMeshes();
 }
 
-void VulkanEngine::upload_2D_rectangle_to_GPU() {
-    std::array<Vertex3D, 4> rectangle_vertices;
-    rectangle_vertices[0].position = { 0.5,-0.5,0 };
-    rectangle_vertices[1].position = { 0.5,0.5,0 };
-    rectangle_vertices[2].position = { -0.5,-0.5,0 };
-    rectangle_vertices[3].position = { -0.5,0.5,0 };
-    rectangle_vertices[0].color = { 0,0,0,1 };
-    rectangle_vertices[1].color = { 0.5,0.5,0.5,1 };
-    rectangle_vertices[2].color = { 1,0,0,1 };
-    rectangle_vertices[3].color = { 0,1,0,1 };
-    std::array<uint32_t, 6> rectangle_indices;
-    rectangle_indices[0] = 0;
-    rectangle_indices[1] = 1;
-    rectangle_indices[2] = 2;
-    rectangle_indices[3] = 2;
-    rectangle_indices[4] = 1;
-    rectangle_indices[5] = 3;
-    rectangle = upload_mesh_to_GPU(rectangle_indices, rectangle_vertices);
-}
 
 AllocatedImage VulkanEngine::create_allocated_image(VkExtent3D size, VkFormat format, VkImageUsageFlags imageUsageFlags, bool mipmapped)
 {
@@ -590,8 +481,8 @@ AllocatedImage VulkanEngine::create_allocated_image(VkExtent3D size, VkFormat fo
     newAllocatedImage.vulkanImageFormat = format;
     newAllocatedImage.vulkanImageExtent3D = size;
     VkImageCreateInfo vulkanImageCreateInfo = vkinit::image_create_info(format, imageUsageFlags, size);
-    if (mipmapped)
-        vulkanImageCreateInfo.mipLevels = static_cast<uint32_t>(std::log2(std::max(size.width, size.height))) + 1;
+    //if (mipmapped)
+        //vulkanImageCreateInfo.mipLevels = static_cast<uint32_t>(std::log2(std::max(size.width, size.height))) + 1;
     VmaAllocationCreateInfo allocationCreateInfo = {};
     allocationCreateInfo.usage = VMA_MEMORY_USAGE_GPU_ONLY;
     allocationCreateInfo.requiredFlags = VkMemoryPropertyFlags(VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
@@ -626,9 +517,9 @@ AllocatedImage VulkanEngine::create_allocated_image_with_data(void* data, VkExte
         bufferImageRegionCopy.imageSubresource.layerCount = 1;
         bufferImageRegionCopy.imageExtent = size;
         vkCmdCopyBufferToImage(vulkanCommandBuffer, uploadBuffer.vulkanBuffer, newImage.vulkanImage, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &bufferImageRegionCopy);
-        if (mipmapped)
-            vkutil::mipmaps_generation(vulkanCommandBuffer, newImage.vulkanImage, VkExtent2D{newImage.vulkanImageExtent3D.width, newImage.vulkanImageExtent3D.height});
-        else
+        //if (mipmapped)
+            //vkutil::mipmaps_generation(vulkanCommandBuffer, newImage.vulkanImage, VkExtent2D{newImage.vulkanImageExtent3D.width, newImage.vulkanImageExtent3D.height});
+        //else
             vkutil::image_transition(vulkanCommandBuffer, newImage.vulkanImage, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
         });
     destroy_allocated_buffer(uploadBuffer);
@@ -893,15 +784,14 @@ void VulkanEngine::update_scene() {
     sceneData.viewportProjectionMatrix = projectionMatrix * viewMatrix;
     sceneData.ambientColor = glm::vec4(.1f);
     sceneData.sunlightColor = glm::vec4(1.f);
-    sceneData.sunlightDirection = glm::vec4(0.f, 1.f, 0.5, 1.f);
+    sceneData.sunlightDirection = glm::vec4(0.f, 1.f, 0.5f, 1.f);
 
     existingScenes["some_scene"]->Draw(glm::mat4{ 1.f }, mainDrawContext);
-    loadedNodes["Suzanne"]->Draw(glm::mat4{ 1.f }, mainDrawContext); // Suzanne = monke
-    for (int x = -3; x < 4; x++) {
-        glm::mat4 cubeScale = glm::scale(glm::vec3{ 0.2 });
-        glm::mat4 cubeTranslation = glm::translate(glm::vec3{ x,1,0 });
-        loadedNodes["Cube"]->Draw(cubeTranslation * cubeScale, mainDrawContext);
-    }
+    //loadedNodes["Suzanne"]->Draw(glm::mat4{ 1.f }, mainDrawContext); // Suzanne = monke
+    existingScenes["fish"]->Draw(glm::mat4{ 1.f }, mainDrawContext);
+    existingScenes["frog"]->Draw(glm::mat4{ 1.f }, mainDrawContext);
+    existingScenes["lol"]->Draw(glm::mat4{ 1.f }, mainDrawContext);
+
     std::chrono::system_clock::time_point finish = std::chrono::system_clock::now();
     std::chrono::microseconds elapsedTimeInMicroseconds = std::chrono::duration_cast<std::chrono::microseconds>(finish - start);
     engineInfo.sceneUpdateTime = elapsedTimeInMicroseconds.count() / 1000.f; // to miliseconds
@@ -1059,9 +949,6 @@ void GLTFMetalRoughness::build_pipelines(VulkanEngine* vulkanEngine) {
     pipelineBuilder.set_cull_mode(VK_CULL_MODE_NONE, VK_FRONT_FACE_CLOCKWISE);
     pipelineBuilder.set_multisampling_none();
     pipelineBuilder.disable_blending();
-    //pipelineBuilder.enable_blending_alphablend();
-    //pipelineBuilder.enable_blending_additive();
-    //pipelineBuilder.disable_depth_test();
     pipelineBuilder.enable_depth_test(true, VK_COMPARE_OP_GREATER_OR_EQUAL);
     pipelineBuilder.set_color_attachment_format(vulkanEngine->_allocatedImage.vulkanImageFormat);
     pipelineBuilder.set_depth_format(vulkanEngine->_depthImage.vulkanImageFormat);
@@ -1070,7 +957,8 @@ void GLTFMetalRoughness::build_pipelines(VulkanEngine* vulkanEngine) {
 
     opaqueObjectsPipeline.pipeline = pipelineBuilder.build_pipeline(vulkanEngine->_vulkanDevice);
 
-    pipelineBuilder.enable_blending_additive();
+    //pipelineBuilder.enable_blending_additive();
+    pipelineBuilder.enable_blending_alphablend();
 
     pipelineBuilder.enable_depth_test(false, VK_COMPARE_OP_GREATER_OR_EQUAL);
 
@@ -1156,3 +1044,123 @@ bool isVisible(const RenderableObject& renderableObject, const glm::mat4& viewpo
     else
         return false;   
 }
+
+#pragma region Deprecated
+void VulkanEngine::upload_2D_rectangle_to_GPU() {
+    std::array<Vertex3D, 4> rectangle_vertices;
+    rectangle_vertices[0].position = { 0.5,-0.5,0 };
+    rectangle_vertices[1].position = { 0.5,0.5,0 };
+    rectangle_vertices[2].position = { -0.5,-0.5,0 };
+    rectangle_vertices[3].position = { -0.5,0.5,0 };
+    rectangle_vertices[0].color = { 0,0,0,1 };
+    rectangle_vertices[1].color = { 0.5,0.5,0.5,1 };
+    rectangle_vertices[2].color = { 1,0,0,1 };
+    rectangle_vertices[3].color = { 0,1,0,1 };
+    std::array<uint32_t, 6> rectangle_indices;
+    rectangle_indices[0] = 0;
+    rectangle_indices[1] = 1;
+    rectangle_indices[2] = 2;
+    rectangle_indices[3] = 2;
+    rectangle_indices[4] = 1;
+    rectangle_indices[5] = 3;
+    rectangle = upload_mesh_to_GPU(rectangle_indices, rectangle_vertices);
+}
+
+void VulkanEngine::triangle_pipeline_init() {
+    VkShaderModule vulkanTriangleFragShaderModule;
+    if (!vkutil::load_shader_module("../../vulkan-base/shaders/colored_triangle.frag.spv", _vulkanDevice, &vulkanTriangleFragShaderModule)) // only for windows + msvc folders
+        fmt::print("Error during fragment shaders build \n");
+
+    VkShaderModule vulkanTriangleVertShaderModule;
+    if (!vkutil::load_shader_module("../../vulkan-base/shaders/colored_triangle.vert.spv", _vulkanDevice, &vulkanTriangleVertShaderModule)) // only for windows + msvc folders
+        fmt::print("Error during vertex shaders build \n");
+
+    VkPipelineLayoutCreateInfo vulkanPipelineLayoutCreateInfo = vkinit::pipeline_layout_create_info();
+    VK_CHECK(vkCreatePipelineLayout(_vulkanDevice, &vulkanPipelineLayoutCreateInfo, nullptr, &_vulkanTrianglePipelineLayout));
+
+    PipelineBuilder pipelineBuilder;
+    pipelineBuilder._vulkanPipelineLayout = _vulkanTrianglePipelineLayout;
+    pipelineBuilder.set_shaders(vulkanTriangleVertShaderModule, vulkanTriangleFragShaderModule);
+    pipelineBuilder.set_input_topology(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST);
+    pipelineBuilder.set_polygon_mode(VK_POLYGON_MODE_FILL);
+    pipelineBuilder.set_cull_mode(VK_CULL_MODE_NONE, VK_FRONT_FACE_CLOCKWISE);
+    pipelineBuilder.set_multisampling_none();
+    pipelineBuilder.disable_blending();
+    pipelineBuilder.disable_depth_test();
+    pipelineBuilder.set_color_attachment_format(_allocatedImage.vulkanImageFormat);
+    pipelineBuilder.set_depth_format(VK_FORMAT_UNDEFINED);
+
+    _vulkanTrainglePipeline = pipelineBuilder.build_pipeline(_vulkanDevice);
+
+    vkDestroyShaderModule(_vulkanDevice, vulkanTriangleFragShaderModule, nullptr);
+    vkDestroyShaderModule(_vulkanDevice, vulkanTriangleVertShaderModule, nullptr);
+
+    _mainDeletionQueue.push_back_deleting_function([&]() {
+        vkDestroyPipelineLayout(_vulkanDevice, _vulkanTrianglePipelineLayout, nullptr);
+        vkDestroyPipeline(_vulkanDevice, _vulkanTrainglePipeline, nullptr);
+        });
+}
+
+void VulkanEngine::mesh_pipeline_init() {
+
+    VkShaderModule vulkanTriangleFragShaderModule;
+    if (!vkutil::load_shader_module("../../vulkan-base/shaders/tex_image.frag.spv", _vulkanDevice, &vulkanTriangleFragShaderModule)) // only for windows + msvc folders
+        fmt::print("Error during fragment shaders build \n");
+
+    VkShaderModule vulkanTriangleVertShaderModule;
+    if (!vkutil::load_shader_module("../../vulkan-base/shaders/colored_triangle_mesh.vert.spv", _vulkanDevice, &vulkanTriangleVertShaderModule)) // only for windows + msvc folders
+        fmt::print("Error during vertex shaders build \n");
+
+    VkPushConstantRange vulkanPushConstantBufferRange{};
+    vulkanPushConstantBufferRange.offset = 0;
+    vulkanPushConstantBufferRange.size = sizeof(GPUDrawingPushConstants);
+    vulkanPushConstantBufferRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+
+    VkPipelineLayoutCreateInfo vulkanPipelineLayoutCreateInfo = vkinit::pipeline_layout_create_info();
+    vulkanPipelineLayoutCreateInfo.pPushConstantRanges = &vulkanPushConstantBufferRange;
+    vulkanPipelineLayoutCreateInfo.pushConstantRangeCount = 1;
+    vulkanPipelineLayoutCreateInfo.pSetLayouts = &_singleImageDescriptorLayout;
+    vulkanPipelineLayoutCreateInfo.setLayoutCount = 1;
+    VK_CHECK(vkCreatePipelineLayout(_vulkanDevice, &vulkanPipelineLayoutCreateInfo, nullptr, &_vulkanMeshPipelineLayout));
+
+    PipelineBuilder pipelineBuilder;
+    pipelineBuilder._vulkanPipelineLayout = _vulkanMeshPipelineLayout;
+    pipelineBuilder.set_shaders(vulkanTriangleVertShaderModule, vulkanTriangleFragShaderModule);
+    pipelineBuilder.set_input_topology(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST);
+    pipelineBuilder.set_polygon_mode(VK_POLYGON_MODE_FILL);
+    pipelineBuilder.set_cull_mode(VK_CULL_MODE_NONE, VK_FRONT_FACE_CLOCKWISE);
+    pipelineBuilder.set_multisampling_none();
+    pipelineBuilder.disable_blending();
+    //pipelineBuilder.enable_blending_alphablend();
+    //pipelineBuilder.enable_blending_additive();
+    //pipelineBuilder.disable_depth_test();
+    pipelineBuilder.enable_depth_test(true, VK_COMPARE_OP_GREATER_OR_EQUAL);
+    pipelineBuilder.set_color_attachment_format(_allocatedImage.vulkanImageFormat);
+    pipelineBuilder.set_depth_format(_depthImage.vulkanImageFormat);
+
+    _vulkanMeshPipeline = pipelineBuilder.build_pipeline(_vulkanDevice);
+
+    vkDestroyShaderModule(_vulkanDevice, vulkanTriangleFragShaderModule, nullptr);
+    vkDestroyShaderModule(_vulkanDevice, vulkanTriangleVertShaderModule, nullptr);
+
+    _mainDeletionQueue.push_back_deleting_function([&]() {
+        vkDestroyPipelineLayout(_vulkanDevice, _vulkanMeshPipelineLayout, nullptr);
+        vkDestroyPipeline(_vulkanDevice, _vulkanMeshPipeline, nullptr);
+        });
+}
+
+void VulkanEngine::loadTestMeshes() {
+    testMeshes = loadGLTFMeshes(this, "../../vulkan-base/assets/basicmesh.glb").value();
+    for (auto& mesh : testMeshes) {
+        std::shared_ptr<MeshNode> newMeshNode = std::make_shared<MeshNode>();
+        newMeshNode->meshAsset = mesh;
+        newMeshNode->localTransform = glm::mat4{ 1.f };
+        newMeshNode->worldTransform = glm::mat4{ 1.f };
+        for (auto& face : newMeshNode->meshAsset->surfaces) {
+            face.gltfMaterial = std::make_shared<GLTFMaterial>(defaultMaterialData);
+        }
+        loadedNodes[mesh->name] = std::move(newMeshNode);
+    }
+}
+
+#pragma endregion

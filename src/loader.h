@@ -53,3 +53,5 @@ std::optional<std::vector<std::shared_ptr<MeshAsset>>> loadGLTFMeshes(VulkanEngi
 std::optional<std::shared_ptr<GLTFSceneInstance>> loadGLTFScene(VulkanEngine* engine, std::string_view filePath);
 
 std::optional<AllocatedImage> loadTexture(VulkanEngine* vulkanEngine, fastgltf::Asset& gltfAsset, fastgltf::Image& gltfImage);
+
+void loadModel(VulkanEngine* engine, std::string_view filePath);

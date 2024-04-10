@@ -3,8 +3,7 @@
 #
 cmake_minimum_required (VERSION 3.8)
 
-project ("vulkan_guide")
-
+project (vulkan_base)
 
 find_package(Vulkan REQUIRED COMPONENTS glslc)
 find_program(glslc_executable NAMES glslc HINTS Vulkan::glslc)
@@ -17,46 +16,48 @@ set (CMAKE_LIBRARY_OUTPUT_DIRECTORY "${PROJECT_SOURCE_DIR}/bin")
 add_subdirectory(src)
 
 find_program(GLSL_VALIDATOR glslangValidator HINTS /usr/bin /usr/local/bin $ENV{VULKAN_SDK}/Bin/ $ENV{VULKAN_SDK}/Bin32/)
-	
+
 #==============================================================================
 # COMPILE SHADERS
 #
 
-set(SHADER_SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/shaders)
-set(SHADER_BINARY_DIR ${CMAKE_CURRENT_BINARY_DIR}/shaders)
 
-file(GLOB SHADERS
-  ${SHADER_SOURCE_DIR}/*.vert
-  ${SHADER_SOURCE_DIR}/*.frag
-  ${SHADER_SOURCE_DIR}/*.comp
-  ${SHADER_SOURCE_DIR}/*.geom
-  ${SHADER_SOURCE_DIR}/*.tesc
-  ${SHADER_SOURCE_DIR}/*.tese
-  ${SHADER_SOURCE_DIR}/*.mesh
-  ${SHADER_SOURCE_DIR}/*.task
-  ${SHADER_SOURCE_DIR}/*.rgen
-  ${SHADER_SOURCE_DIR}/*.rchit
-  ${SHADER_SOURCE_DIR}/*.rmiss)
+function(add_shaders TARGET_NAME)
+  set(SHADER_SOURCE_FILES ${ARGN}) # the rest of arguments to this function will be assigned as shader source files
+  
+  # Validate that source files have been passed
+  list(LENGTH SHADER_SOURCE_FILES FILE_COUNT)
+  if(FILE_COUNT EQUAL 0)
+    message(FATAL_ERROR "Cannot create a shaders target without any source files")
+  endif()
 
-add_custom_command(
-  COMMAND
-    ${CMAKE_COMMAND} -E make_directory ${SHADER_BINARY_DIR}
-  OUTPUT ${SHADER_BINARY_DIR}
-  COMMENT "Creating ${SHADER_BINARY_DIR}"
-)
+  set(SHADER_COMMANDS)
+  set(SHADER_PRODUCTS)
 
-foreach(source IN LISTS SHADERS)
-  get_filename_component(FILENAME ${source} NAME)
+  foreach(SHADER_SOURCE IN LISTS SHADER_SOURCE_FILES)
+    #cmake_path(ABOSULTE_PATH SHADER_SOURCE NORMALIZE)
+    cmake_path(GET SHADER_SOURCE FILENAME SHADER_NAME)
+    
+    # Build command
+    list(APPEND SHADER_COMMAND "COMMAND ")
+    list(APPEND SHADER_COMMAND "${glslc_executable} ")
+    list(APPEND SHADER_COMMAND "${SHADER_SOURCE}")
+    list(APPEND SHADER_COMMAND " -o ")
+    list(APPEND SHADER_COMMAND "${CMAKE_CURRENT_BINARY_DIR}/shaders/${SHADER_NAME}.spv")
+
+    # Add product
+    list(APPEND SHADER_PRODUCTS "${CMAKE_CURRENT_BINARY_DIR}/shaders/${SHADER_NAME}.spv")
+  endforeach()
+  message(${SHADER_COMMAND})
   add_custom_command(
-    COMMAND
-      ${glslc_executable}
-      -o ${SHADER_BINARY_DIR}/${FILENAME}.spv
-      ${source}
-    OUTPUT ${SHADER_BINARY_DIR}/${FILENAME}.spv
-    DEPENDS ${source} ${SHADER_BINARY_DIR}
-    COMMENT "Compiling ${FILENAME}"
+	OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/shaders/${SHADER_NAME}.spv
+  	DEPENDS ${TARGET_NAME}
+	COMMAND ${glslc_executable} ${SHADER_SOURCE} -o ${CMAKE_CURRENT_BINARY_DIR}/shaders/${SHADER_NAME}.spv
   )
-  list(APPEND SPV_SHADERS ${SHADER_BINARY_DIR}/${FILENAME}.spv)
-endforeach()
+  add_custom_target(${TARGET_NAME} ALL 
+	DEPENDS "${CMAKE_CURRENT_BINARY_DIR}/shaders/${SHADER_NAME}.spv"
+	COMMENT "gay"
+  ) 	
+endfunction()
 
-add_custom_target(shaders ALL DEPENDS ${SPV_SHADERS})
+add_shaders(theTarget ${CMAKE_CURRENT_SOURCE_DIR}/shaders/sky.comp)

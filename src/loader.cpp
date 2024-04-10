@@ -102,7 +102,7 @@ std::optional<std::vector<std::shared_ptr<MeshAsset>>> loadGLTFMeshes(VulkanEngi
 }
 
 std::optional<std::shared_ptr<GLTFSceneInstance>> loadGLTFScene(VulkanEngine* vulkanEngine, std::string_view filePath) {
-	fmt::print("Loading GLTF from {}", filePath);
+	fmt::print("Loading GLTF from {} \n", filePath);
 	std::shared_ptr<GLTFSceneInstance> scene = std::make_shared<GLTFSceneInstance>();
 	scene->creator = vulkanEngine;
 	GLTFSceneInstance& sceneReference = *scene.get();
@@ -152,6 +152,10 @@ std::optional<std::shared_ptr<GLTFSceneInstance>> loadGLTFScene(VulkanEngine* vu
 		samplerCreateInfo.magFilter = openGL_filter_to_vk_filter(gltfSampler.magFilter.value_or(fastgltf::Filter::Nearest));
 		samplerCreateInfo.minFilter = openGL_filter_to_vk_filter(gltfSampler.minFilter.value_or(fastgltf::Filter::Nearest));
 		samplerCreateInfo.mipmapMode = openGL_filter_to_vk_mipmap_mode(gltfSampler.minFilter.value_or(fastgltf::Filter::Nearest));
+		VkPhysicalDeviceProperties properties{};
+		vkGetPhysicalDeviceProperties(vulkanEngine->_selectedGPU, &properties);
+		samplerCreateInfo.anisotropyEnable = VK_TRUE;
+		samplerCreateInfo.maxAnisotropy = properties.limits.maxSamplerAnisotropy;
 		VkSampler newVulkanSampler;
 		vkCreateSampler(vulkanEngine->_vulkanDevice, &samplerCreateInfo, nullptr, &newVulkanSampler);
 		sceneReference.vulkanSamplers.push_back(newVulkanSampler);
@@ -394,6 +398,11 @@ std::optional<AllocatedImage> loadTexture(VulkanEngine* vulkanEngine, fastgltf::
 	else {
 		return newTexture;
 	}
+}
+
+
+void loadModel() {
+
 }
 #pragma endregion
 

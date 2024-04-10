@@ -54,6 +54,7 @@ void vkutil::copy_image_to_image(VkCommandBuffer vulkanCommandBuffer, VkImage so
 }
 
 void vkutil::mipmaps_generation(VkCommandBuffer vulkanCommandBuffer, VkImage vulkanImage, VkExtent2D imageExtent) {
+
 	int mipLevels = int(std::floor(std::log2(std::max(imageExtent.width, imageExtent.height)))+1);
 	for (int mipLevel = 0; mipLevel < mipLevels; mipLevel++) {
 		VkExtent2D imageExtentHalved = imageExtent;

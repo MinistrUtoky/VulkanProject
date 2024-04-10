@@ -208,7 +208,7 @@ VkDescriptorBufferInfo vkinit::buffer_info(VkBuffer buffer, VkDeviceSize offset,
     return binfo;
 }
 
-#pragma region image infos
+#pragma region default image infos
 VkImageCreateInfo vkinit::image_create_info(VkFormat format, VkImageUsageFlags usageFlags, VkExtent3D extent)
 {
     VkImageCreateInfo info = {};
@@ -241,6 +241,7 @@ VkImageViewCreateInfo vkinit::imageview_create_info(VkFormat format, VkImage ima
 }
 #pragma endregion
 
+#pragma region default pipeline infos
 VkPipelineLayoutCreateInfo vkinit::pipeline_layout_create_info()
 {
     VkPipelineLayoutCreateInfo info {};
@@ -266,3 +267,5 @@ VkPipelineShaderStageCreateInfo vkinit::pipeline_shader_stage_create_info(VkShad
     info.pName = entry;
     return info;
 }
+
+#pragma endregion

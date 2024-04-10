@@ -216,6 +216,10 @@ private:
 	void update_scene();
 	FrameInfo& get_current_frame() { return _frames[_frameNumber % FRAME_OVERLAP]; };
 	void swapchain_destroy();
+	void create_scene(std::string sceneName, std::string filePath);
+	void loadTestMeshes();
 };
+
+
 
 bool isVisible(const RenderableObject& renderableObject, const glm::mat4& viewportToProjectionMatrix);

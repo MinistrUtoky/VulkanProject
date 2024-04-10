@@ -17,6 +17,8 @@ add_executable (engine
   loader.cpp
   camera.cpp
   camera.h
+  database_controller.cpp
+  database_controller.h
 )
 
 set_property(TARGET engine PROPERTY CXX_STANDARD 20)
