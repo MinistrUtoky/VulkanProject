@@ -21,6 +21,8 @@ find_program(GLSL_VALIDATOR glslangValidator HINTS /usr/bin /usr/local/bin $ENV{
 # COMPILE SHADERS
 #
 
+add_subdirectory(shaders)
+add_subdirectory(assets)
 
 function(add_shaders TARGET_NAME)
   set(SHADER_SOURCE_FILES ${ARGN}) # the rest of arguments to this function will be assigned as shader source files

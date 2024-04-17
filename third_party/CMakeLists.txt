@@ -20,7 +20,6 @@ target_link_libraries(vkbootstrap PUBLIC Vulkan::Vulkan $<$<BOOL:UNIX>:${CMAKE_D
 
 #both vma and glm and header only libs so we only need the include path
 target_include_directories(vma INTERFACE vma)
-
 target_include_directories(glm INTERFACE glm)
 
 #add_library(sdl2 INTERFACE)
@@ -49,3 +48,14 @@ target_sources(imgui PRIVATE
 target_link_libraries(imgui PUBLIC Vulkan::Vulkan SDL2::SDL2)
 
 target_include_directories(stb_image INTERFACE stb_image)
+
+
+add_library(sqlite3 STATIC)
+target_sources(sqlite3 PRIVATE 
+  sqlite3/sqlite3.h
+  sqlite3/sqlite3ext.h
+  sqlite3/sqlite3.c
+  sqlite3/shell.c
+  )
+target_include_directories(sqlite3 PUBLIC sqlite3)
+set_target_properties(sqlite3 PROPERTIES LINKER_LANGUAGE CXX)

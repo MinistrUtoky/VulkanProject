@@ -4,7 +4,9 @@
 #include <types.h>
 #include <ctime>
 #include <iostream>
-
+#include <fstream>     
+#include "filesystem"
+#include <sqlite3.h>
 
 class ConverterToSpirv {
 public:
@@ -32,7 +34,13 @@ private:
 
 class DataController {
 private:
-	const char* gszFile = "C:\\test.db";
+	const char* writeModelsFileAdress = "..\\assets\\";
+	const char* writeShadersFileAdress = "..\\shaders\\";
+	const char* dataAddress = "C:\\Users\\Viqtop\\PycharmProjects\\botstuff2\\data\\graphics_database.db";
 public:
 	void test();
+	void retrieve_model_blobs();
+	void retrieve_shader_blobs();
+	void retrieve_blobs(const char* writeDirectory, const char* tableName, int filenameColumnIndex, int blobColumnIndex);
+	void retrieve_all_blobs();
 };
