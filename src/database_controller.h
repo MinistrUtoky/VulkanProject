@@ -36,8 +36,8 @@ class DataController {
 private:
 	const char* writeModelsFileAdress = "..\\assets\\";
 	const char* writeShadersFileAdress = "..\\shaders\\";
-	const char* dataAddress = "C:\\Users\\Viqtop\\PycharmProjects\\bot\\data\\graphics_database.db";
-	ConverterToSpirv converter{ "C:\\VulkanSDK\\1.3.261.1\\Bin\\glslc" };
+	const char* dataAddress = "..\\..\\multitaskJoggingBot\\data\\graphics_database.db";
+	ConverterToSpirv converter{ "C:\\VulkanSDK\\1.3.275.0\\Bin\\glslc" };
 public:
 	void test();
 	void retrieve_model_blobs();

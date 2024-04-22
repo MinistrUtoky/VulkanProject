@@ -95,7 +95,7 @@ void ConverterToSpirv::convertShaderToSpirv(std::string sourceFilePath, std::str
 void ConverterToSpirv::convertAllApplicableShaders(std::string sourceFolderPath, std::string resultFolderPath) {
     for (const std::filesystem::directory_entry& item : std::filesystem::directory_iterator(sourceFolderPath))
         for (const std::string ext : applicableExtensions) {
-            if (item.path().extension() == ext)
+            if (item.path().extension().string() == ext)
                 convertShaderToSpirv(item.path().string(), resultFolderPath + "\\" + item.path().filename().string());
         }
 }

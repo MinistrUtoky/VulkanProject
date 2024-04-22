@@ -64,7 +64,7 @@ void VulkanEngine::upload_scenes() {
         fmt::print("Error: zero items in asset directory!\n");
     for (const std::filesystem::directory_entry& item : std::filesystem::directory_iterator(assetsPath))
         for (const std::string ext : assetExtensions) {
-            if (item.path().extension() == ext) {
+            if (item.path().extension().string() == ext) {
                 create_scene(item.path().filename().string(), item.path().string());
             }
         }
@@ -886,7 +886,7 @@ void VulkanEngine::prepare_imgui() {
     ImGui::SetNextWindowSize(ImVec2(_windowExtent.width / 4.f, _windowExtent.height / 4.f));
     if (ImGui::Begin("info")) {
         ImGui::SetNextWindowPos(ImVec2(0.f, 0.f));
-        ImGui::Text("frames per second %f milliseconds", engineInfo.fps);
+        ImGui::Text("frames per second %f", engineInfo.fps);
         ImGui::Text("draw time %f milliseconds", engineInfo.meshDrawTime);
         ImGui::Text("update time %f milliseconds", engineInfo.sceneUpdateTime);
         ImGui::Text("triangles %i", engineInfo.triangleCount);
