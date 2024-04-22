@@ -4,7 +4,8 @@
 #include <types.h>
 #include <descriptors.h>
 #include <loader.h>
-#include "camera.h";
+#include "camera.h"
+#include <glm/gtx/transform.hpp>
 
 struct ComputePushConstants {
 	glm::vec4 data1;
@@ -98,6 +99,71 @@ struct EngineInfo {
 	float meshDrawTime;
 };
 
+//non-engine logic
+struct Transformations {
+protected:
+	float millisecondsPerIteration;
+	int currentIndex = 0;
+	std::vector<glm::vec3> movements;
+public:
+	std::chrono::system_clock::time_point movementStart;
+	std::chrono::system_clock::time_point iStart;
+
+	Transformations() = default;
+	Transformations(std::vector<glm::vec3> movements, float iterationMilliseconds = 1000.f) {
+		this->movements = movements;
+		millisecondsPerIteration = iterationMilliseconds;
+		movementStart = std::chrono::system_clock::now();
+		iStart = std::chrono::system_clock::now();
+	};
+	~Transformations() { movements.clear(); }
+	virtual glm::mat4 getCurrentMatrix() {  return glm::mat4{ 1.f }; }
+};
+
+// grows until the set scale
+struct Scales : public Transformations {
+	glm::vec3 currentIterationStartScale;
+	Scales() = default;
+	Scales(glm::vec3 startScale, std::vector<glm::vec3> movements, float iterationMilliseconds = 1000.f) : Transformations(movements, iterationMilliseconds) {
+		currentIterationStartScale = startScale;
+	}
+	glm::mat4 getCurrentMatrix() override;
+};
+
+// once iteration rotation makes full circle cycle
+struct Rotations : public Transformations {
+	Rotations() = default;
+	Rotations(std::vector<glm::vec3> movements, float iterationMilliseconds = 1000.f) : Transformations(movements, iterationMilliseconds) { }
+	glm::mat4 getCurrentMatrix() override;
+};
+
+// iteration means passing set vector distance
+struct Translations : public Transformations {
+	Translations() = default;
+	Translations(std::vector<glm::vec3> movements, float iterationMilliseconds = 1000.f) : Transformations(movements, iterationMilliseconds) { }
+	glm::mat4 getCurrentMatrix() override;
+};
+
+struct Movement {
+private:
+	Scales scales;
+	Rotations rotations;
+	Translations translations;
+public:
+	Movement() = default;
+	Movement(std::vector<glm::vec3> scales, std::vector<glm::vec3> rotations, std::vector<glm::vec3> translations, 
+		float scaleIterationMilliseconds = 1000.f, float rotationIterationMilliseconds = 1000.f, float translationIterationMilliseconds = 1000.f, 
+		glm::vec3 startScale=glm::vec3{1.f}) {// since 1.f is default scale for any object's draw call and we are resizing exactly it's matrix
+		this->scales = Scales{ startScale, scales, scaleIterationMilliseconds };
+		this->rotations = Rotations{ rotations, rotationIterationMilliseconds };
+		this->translations = Translations{ translations, translationIterationMilliseconds };
+	}
+	glm::mat4 getCurrentMatrix();
+	void resetTimers();
+};
+
+//non-engine logic
+
 constexpr unsigned int FRAME_OVERLAP = 2;
 
 class VulkanEngine {
@@ -108,7 +174,7 @@ public:
 	bool _isInitialized{ false };
 	int _frameNumber {0};
 	bool stopRendering{ false };
-	VkExtent2D _windowExtent{ 800 , 600 };
+	VkExtent2D _windowExtent{ 1280 , 720 };
 	struct SDL_Window* _window{ nullptr };
 	static VulkanEngine& Get();
 
@@ -177,19 +243,24 @@ public:
 	DrawContext mainDrawContext;
 	std::unordered_map<std::string, std::shared_ptr<HierarchyNode>> loadedNodes;
 
-	Camera mainEngineBuiltinCamera;
-
-	std::unordered_map<std::string, std::shared_ptr<GLTFSceneInstance>> existingScenes;
 
 	EngineInfo engineInfo;
 
+	// non-engine logic
+	Camera mainEngineBuiltinCamera;
+	std::unordered_map<std::string, std::shared_ptr<GLTFSceneInstance>> existingScenes;
+	std::unordered_map < std::string, glm::mat4 > existingScenesStartMatrices;
 	const std::string assetExtensions[2]{
 		".glb",
 		".gltf"
 	};
 	const std::string assetsPath{ "..\\assets\\" };
-	std::vector<std::string> loadedAssets{};
-	std::string selectedAsset { "" };
+	std::string selectedScene{ "" };
+	glm::mat4 selectedSceneMovedMatrix{ 1.f };
+	std::unordered_map <std::string, Movement> allStandardMovements;
+	std::string selectedMovementName{ "Staying Still" };
+	Movement currentMovement;
+	//
 
 	void init();
 	void cleanup();
@@ -214,10 +285,12 @@ private:
 	void mesh_pipeline_init();
 	void imgui_init();
 	void default_data_init();
+	void upload_scenes();
 	void upload_2D_rectangle_to_GPU();
 	void swapchain_create(uint32_t swapchainWidth, uint32_t swapchainHeight);
 	void swapchain_resize();
 	void immediate_command_submit(std::function<void(VkCommandBuffer vulkanCommandBuffer)>&& function);
+	void prepare_imgui();
 	void draw_background(VkCommandBuffer vulkanCommandBuffer);
 	void draw_imgui(VkCommandBuffer vulkanCommandBuffer, VkImageView targetVulkanImageView);
 	void draw_geometry(VkCommandBuffer vulkanCommandBuffer);
@@ -226,10 +299,17 @@ private:
 	void swapchain_destroy();
 	void create_scene(std::string sceneName, std::string filePath);
 	void loadTestMeshes();
-	void rescaleSceneToTheSize(GLTFSceneInstance& scene, glm::vec3 newSize);
-	void moveSceneTo(GLTFSceneInstance& scene, glm::vec3 position);
-	void normalizeScene(GLTFSceneInstance& scene);
 };
 
 
 bool isVisible(const RenderableObject& renderableObject, const glm::mat4& viewportToProjectionMatrix);
+
+
+//non-engine logics
+
+bool HorizontallyCentralizedButton(const char* buttonText);
+void rescaleSceneToTheSize(GLTFSceneInstance& scene, glm::vec3 newSize);
+void moveSceneTo(GLTFSceneInstance& scene, glm::vec3 position);
+void normalizeScene(GLTFSceneInstance& scene);
+
+

@@ -21,6 +21,9 @@ void DataController::test()
 }
 
 void write_blob_into_file(char* filePath, vector<unsigned char> blob) {
+    if (std::filesystem::exists(filePath)) {
+        printf("OVERWRITING EXISTING FILE!!!\n");
+    }
     std::ofstream file(filePath, std::ios::out | std::ios::binary);
     std::ostream_iterator<unsigned char> iter(file);
     copy(blob.cbegin(), blob.cend(), iter);
@@ -48,7 +51,6 @@ void DataController::retrieve_blobs(const char* writeDirectory, const char* tabl
             int ret_code = 0;
             std::string filePath;
             while ((ret_code = sqlite3_step(statement)) == SQLITE_ROW) {
-                printf("ID = %d\n", sqlite3_column_int(statement, 0));
                 printf("FILENAME = %s\n", (char*)sqlite3_column_text(statement, filenameColumnIndex));
                 int size = sqlite3_column_bytes(statement, blobColumnIndex);
                 unsigned char* p = (unsigned char*)sqlite3_column_blob(statement, blobColumnIndex);

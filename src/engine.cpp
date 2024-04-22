@@ -5,14 +5,10 @@
 #include <SDL_vulkan.h>
 
 #include <initializers.h>
-#include <types.h>
-#include <chrono>
-#include <thread>
 #include "VkBootstrap.h" // fast startup library
 #include "images.h"
 #define VMA_IMPLEMENTATION
 #include "vk_mem_alloc.h"
-#include <glm/gtx/transform.hpp>
 #include <glm/gtx/string_cast.hpp>
 
 #include "pipelines.h"
@@ -51,36 +47,92 @@ void VulkanEngine::init()
     imgui_init();
     default_data_init();
 
+    //non-engine logic
+    upload_scenes();
+    //non-engine logic
+
+    _isInitialized = true;
+}
+
+void VulkanEngine::upload_scenes() {
     mainEngineBuiltinCamera.velocity = glm::vec3(0.f);
     mainEngineBuiltinCamera.position = glm::vec3(0, 0, 5);
     mainEngineBuiltinCamera.yaw = 0;
     mainEngineBuiltinCamera.pitch = 0;
-    
-    if (std::distance(std::filesystem::directory_iterator(assetsPath), std::filesystem::directory_iterator{}) == 0) 
+
+    if (std::distance(std::filesystem::directory_iterator(assetsPath), std::filesystem::directory_iterator{}) == 0)
         fmt::print("Error: zero items in asset directory!\n");
     for (const std::filesystem::directory_entry& item : std::filesystem::directory_iterator(assetsPath))
         for (const std::string ext : assetExtensions) {
             if (item.path().extension() == ext) {
-                loadedAssets.push_back(item.path().filename().string());
                 create_scene(item.path().filename().string(), item.path().string());
             }
         }
-    glm::mat4 rescaleMatrix;
-    glm::vec3 worldCenter{0,0,0};
+
+    rescaleSceneToTheSize(*existingScenes["room.glb"].get(), mainEngineBuiltinCamera.limitsXYZ*0.45f);
+    moveSceneTo(*existingScenes["room.glb"].get(), { 0.f, -mainEngineBuiltinCamera.limitsXYZ.y * 0.25f, 0.f });
+    printf("\n");
     for (auto& [name, scene] : existingScenes) {
         if (name != "room.glb") {
-            normalizeScene(*scene);
+            moveSceneTo(*scene.get(), glm::vec3{0.f});
             rescaleSceneToTheSize(*scene.get(), mainEngineBuiltinCamera.limitsXYZ * 0.25f);
-            moveSceneTo(*scene, worldCenter);
-        };
+        }
     }
-    _isInitialized = true;
+
+    currentMovement = Movement{ { }, { }, { } };
+    allStandardMovements["Staying Still"] = currentMovement;
+    allStandardMovements["Jiggling"] = Movement{ { }, { },
+                                                { glm::vec3{ 5.f, 0.f, 0.f }, glm::vec3{ -5.f, 0.f, 0.f },
+                                                glm::vec3{ -5.f, 0.f, 0.f },  glm::vec3{ 5.f, 0.f, 0.f } }, 0.f, 0.f, 250.f };
+    allStandardMovements["Horizontal Rotation"] = Movement{ { }, { glm::vec3{ 0.f, 1.f, 0.f } }, { }, 0.f, 5000.f };
+    allStandardMovements["Vertical Rotation"] = Movement{ { }, { glm::vec3{ 1.f, 0.f, 0.f } }, {  }, 0.f, 5000.f };
+    //creating chaotic rotation movement pattern
+    std::vector<glm::vec3> rotations;
+    const int numberOfRotations = 20;
+    for (float i = 0; i < numberOfRotations; i++) {
+        rotations.push_back(glm::vec3{ (float)std::rand() / RAND_MAX,
+                            (float)std::rand() / RAND_MAX, (float)std::rand() / RAND_MAX });
+    }
+    allStandardMovements["Chaotic Rotation"] = Movement{ { }, 
+                            rotations, { }, 0.f, 500.f };
+    //
+    // creating circling movement pattern
+    std::vector<glm::vec3> directions;
+    const float circleMultiplier = 0.5f;
+    for (float i = glm::pi<float>() * 2.f / 36.f; i < glm::pi<float>() * 2; i += glm::pi<float>() * 2.f / 36.f) {
+        glm::vec3 direction{ glm::sin(i), 0.f, glm::cos(i) };
+        directions.push_back(direction*circleMultiplier);
+    }
+    allStandardMovements["Circling"] = Movement{ {}, {}, directions, 0.f, 0.f, 80.f};
+    //
+    //creating chaotic shaking movement pattern
+    std::vector<glm::vec3> shakes;
+    const int numberOfShakes = 20;
+    const float shakingCoef = 0.2f;
+    for (float i = 0; i < numberOfShakes; i++) {
+        glm::vec3 shake;
+        shake = glm::vec3{ (float)std::rand() / RAND_MAX,
+                            (float)std::rand() / RAND_MAX, (float)std::rand() / RAND_MAX };
+        shakes.push_back(shake*shakingCoef);
+        shakes.push_back(glm::vec3{ -shake.x, -shake.y, -shake.z }*shakingCoef);
+    }
+    allStandardMovements["Shaking"] = Movement{ {},
+                            {}, shakes, 0.f, 0.f, 20.f };
+    //
+    allStandardMovements["Cross Movement"] = Movement{ { }, { },
+                                                { glm::vec3{ 5.f, 0.f, 0.f }, glm::vec3{ -5.f, 0.f, 0.f },
+                                                glm::vec3{ -5.f, 0.f, 0.f },  glm::vec3{ 5.f, 0.f, 0.f },
+                                                glm::vec3{ 0.f, 0.f, 5.f }, glm::vec3{ 0.f, 0.f, -5.f },
+                                                glm::vec3{ 0.f, 0.f, -5.f },  glm::vec3{ 0.f, 0.f, 5.f } }, 0.f, 0.f, 500.f };
+    allStandardMovements["Horizontal Rotation"] = Movement{ { }, { glm::vec3{ 0.f, 1.f, 0.f } }, { }, 0.f, 5000.f };
+    allStandardMovements["Pulsation"] = Movement{ { glm::vec3{ 1.1f }, glm::vec3{ 0.9f } }, { }, { }, 500.f };
 }
 
 void VulkanEngine::create_scene(std::string sceneName, std::string filePath) {
     std::optional<std::shared_ptr<GLTFSceneInstance>> someScene = loadGLTFScene(this, filePath);
     assert(someScene.has_value());
     existingScenes[sceneName] = *someScene;
+    existingScenesStartMatrices[sceneName] = glm::mat4{ 1.f };
 }
 
 void VulkanEngine::vulkan_init() {
@@ -487,7 +539,6 @@ void VulkanEngine::default_data_init() {
     //loadTestMeshes();
 }
 
-
 AllocatedImage VulkanEngine::create_allocated_image(VkExtent3D size, VkFormat format, VkImageUsageFlags imageUsageFlags, bool mipmapped)
 {
     AllocatedImage newAllocatedImage;
@@ -777,16 +828,14 @@ void VulkanEngine::update_scene() {
     sceneData.projectionMatrix = projectionMatrix;
     sceneData.viewportProjectionMatrix = projectionMatrix * viewMatrix;
     sceneData.ambientColor = glm::vec4(.1f);
-    sceneData.sunlightColor = glm::vec4(1.f);
+    sceneData.sunlightColor = glm::vec4(2.f);
     sceneData.sunlightDirection = glm::vec4(0.f, 1.f, 0.5f, 1.f);
 
-    existingScenes["room.glb"]->Draw(glm::scale(glm::mat4{ 1.f }, mainEngineBuiltinCamera.limitsXYZ+5.f), mainDrawContext);
-    if (selectedAsset != "") {
-        existingScenes[selectedAsset]->Draw(glm::mat4{ 1.f }, mainDrawContext);
+    existingScenes["room.glb"]->Draw(glm::mat4{ 1.f }, mainDrawContext);
+    if (selectedScene != "") {
+        selectedSceneMovedMatrix *= existingScenesStartMatrices[selectedScene]*currentMovement.getCurrentMatrix();
+        existingScenes[selectedScene]->Draw(selectedSceneMovedMatrix, mainDrawContext);
     }
-    //for (std::string assetName : loadedAssets) {
-        //existingScenes[assetName]->Draw(glm::mat4{ 1.f }, mainDrawContext);
-    //}
     //loadedNodes["Suzanne"]->Draw(glm::mat4{ 1.f }, mainDrawContext); // Suzanne = monke
 
     std::chrono::system_clock::time_point finish = std::chrono::system_clock::now();
@@ -818,46 +867,71 @@ void VulkanEngine::run()
         }
         if (resizeRequested)
             swapchain_resize();
-        ImGui_ImplVulkan_NewFrame();
-        ImGui_ImplSDL2_NewFrame(_window);
-        ImGui::NewFrame();
-        if (ImGui::Begin("skybox")) {
-            ImGui::SliderFloat("Render Scale", &renderScale, 0.3f, 1.f);
-            ComputeEffect& selectedEffect = backgroundEffects[currentBackgroundEffect];
-            ImGui::Text("Selected effect: ", selectedEffect.name);
-            ImGui::SliderInt("(Effect Index)", &currentBackgroundEffect, 0, backgroundEffects.size()-1);
-            ImGui::InputFloat4("parameter 1", (float*)&selectedEffect.data.data1);
-            ImGui::InputFloat4("parameter 2", (float*)&selectedEffect.data.data2);
-            ImGui::InputFloat4("parameter 3", (float*)&selectedEffect.data.data3);
-            ImGui::InputFloat4("parameter 4", (float*)&selectedEffect.data.data4);
-            ImGui::End();
-        }
-        if (ImGui::Begin("info")) {
-            ImGui::Text("frames per second %f milliseconds", engineInfo.fps);
-            ImGui::Text("draw time %f milliseconds", engineInfo.meshDrawTime);
-            ImGui::Text("update time %f milliseconds", engineInfo.sceneUpdateTime);
-            ImGui::Text("triangles %i", engineInfo.triangleCount);
-            ImGui::Text("draw calls %i", engineInfo.drawcallCount);
-            ImGui::End();
-        }
-        if (ImGui::Begin("model selection")) {
-            ImGui::Text("select one of the following:");
-            for (std::string assetName : loadedAssets) {
-                if (assetName == "room.glb")
-                    continue;
-                if (ImGui::Button(assetName.c_str())) {
-                    selectedAsset = assetName.c_str();
-                };
-            }
-            ImGui::End();
-        }
-        //ImGui::ShowDemoWindow(); - demo window
-        ImGui::Render();
+
+        prepare_imgui();
+        
         draw();
         std::chrono::system_clock::time_point finish = std::chrono::system_clock::now();
         std::chrono::microseconds elapsedTimeInMicroseconds = std::chrono::duration_cast<std::chrono::microseconds>(finish - start);
         engineInfo.fps = 1000000.f / elapsedTimeInMicroseconds.count(); // to frame per second
     }
+}
+
+void VulkanEngine::prepare_imgui() {
+    ImGui_ImplVulkan_NewFrame();
+    ImGui_ImplSDL2_NewFrame(_window);
+    ImGui::NewFrame();
+
+    ImGui::SetNextWindowPos(ImVec2(0.f, 0.f));
+    ImGui::SetNextWindowSize(ImVec2(_windowExtent.width / 4.f, _windowExtent.height / 4.f));
+    if (ImGui::Begin("info")) {
+        ImGui::SetNextWindowPos(ImVec2(0.f, 0.f));
+        ImGui::Text("frames per second %f milliseconds", engineInfo.fps);
+        ImGui::Text("draw time %f milliseconds", engineInfo.meshDrawTime);
+        ImGui::Text("update time %f milliseconds", engineInfo.sceneUpdateTime);
+        ImGui::Text("triangles %i", engineInfo.triangleCount);
+        ImGui::Text("draw calls %i", engineInfo.drawcallCount);
+        ImGui::End();
+    }
+    ImGui::SetNextWindowPos(ImVec2(0.f, _windowExtent.height / 4.f));
+    ImGui::SetNextWindowSize(ImVec2(_windowExtent.width / 4.f, _windowExtent.height * 3.f / 4.f));
+    if (ImGui::Begin("Settings")) {        
+        ImGui::Text("Skybox selection:");
+        //ImGui::SliderFloat("Render Scale", &renderScale, 0.3f, 1.f);
+        ComputeEffect& selectedEffect = backgroundEffects[currentBackgroundEffect];
+        ImGui::Text("Selected effect: ", selectedEffect.name);
+        ImGui::SliderInt("(Effect Index)", &currentBackgroundEffect, 0, backgroundEffects.size() - 1);
+        ImGui::InputFloat4("parameter 1", (float*)&selectedEffect.data.data1);
+        ImGui::InputFloat4("parameter 2", (float*)&selectedEffect.data.data2);
+        ImGui::InputFloat4("parameter 3", (float*)&selectedEffect.data.data3);
+        ImGui::InputFloat4("parameter 4", (float*)&selectedEffect.data.data4);
+
+        ImGui::Text("Model selection:");
+        for (auto& [sceneName, scene] : existingScenes) {
+            if (sceneName == "room.glb")
+                continue;
+            if (ImGui::Button(sceneName.c_str(), ImVec2(ImGui::GetWindowWidth(), 0.f))) {
+                selectedScene = sceneName.c_str();
+                selectedSceneMovedMatrix = glm::mat4 { 1.f };
+            };
+        }
+        ImGui::Text("Movement selection:");
+        for (auto& [movementName, movement] : allStandardMovements) {
+            if (ImGui::Button(movementName.c_str(), ImVec2(ImGui::GetWindowWidth(), 0.f))) {
+                selectedMovementName = movementName;
+                movement.resetTimers();
+                selectedSceneMovedMatrix = glm::mat4{ 1.f };
+                currentMovement = movement;
+            };
+        }
+        ImGui::Text("Selected model:");
+        ImGui::Text(selectedScene.c_str());
+        ImGui::Text("Selected movement:");
+        ImGui::Text(selectedMovementName.c_str());
+
+        ImGui::End();
+    }
+    ImGui::Render();
 }
 #pragma endregion
 
@@ -1053,40 +1127,108 @@ bool isVisible(const RenderableObject& renderableObject, const glm::mat4& viewpo
         return false;   
 }
 
-void VulkanEngine::rescaleSceneToTheSize(GLTFSceneInstance& scene, glm::vec3 newSize) {
+
+//non-engine logic
+void rescaleSceneToTheSize(GLTFSceneInstance& scene, glm::vec3 newSize) {
     glm::vec3 scale{};
-    for (auto node : scene.hierarchyTopNodes) {
-        printf(glm::to_string(static_cast<MeshNode*>(node.get())->localTransform).c_str());
+    for (auto& node : scene.hierarchyTopNodes) {
         scale.x = newSize.x / node.get()->localTransform[0].x;
         scale.y = newSize.y / node.get()->localTransform[1].y;
         scale.z = newSize.z / node.get()->localTransform[2].z;
-        node.get()->localTransform = glm::scale(node.get()->localTransform, scale);
+        node.get()->localTransform *= glm::scale(scale);
         node.get()->refreshWorldTransform(glm::mat4{ 1.f });
-        printf(glm::to_string(static_cast<MeshNode*>(node.get())->localTransform).c_str());
-        printf("\n");
     }
 }
 
-void VulkanEngine::moveSceneTo(GLTFSceneInstance& scene, glm::vec3 position) {
+void moveSceneTo(GLTFSceneInstance& scene, glm::vec3 position) {
     glm::vec4 scenePos;
-    for (auto node : scene.hierarchyTopNodes) {
-        printf(glm::to_string(node.get()->localTransform).c_str());
+    for (auto& node : scene.hierarchyTopNodes) {
         scenePos = node.get()->localTransform[3];
-        node.get()->localTransform = glm::translate(node.get()->localTransform, 
-                                                    position - glm::vec3{ scenePos.x, scenePos.y, scenePos.z });
+        node.get()->localTransform *= glm::translate(position - glm::vec3{ scenePos.x, scenePos.y, scenePos.z });
         node.get()->refreshWorldTransform(glm::mat4{1.f});
-        printf(glm::to_string(node.get()->localTransform).c_str());
-        printf("\n");
     }
 }
 
-
-void VulkanEngine::normalizeScene(GLTFSceneInstance& scene) {
-    for (auto node : scene.hierarchyTopNodes) {
+void normalizeScene(GLTFSceneInstance& scene) {   
+    for (auto& node : scene.hierarchyTopNodes) {
         node.get()->localTransform = glm::mat4{ 1.f };
         node.get()->refreshWorldTransform(glm::mat4{ 1.f });
     }
 }
+
+bool HorizontallyCentralizedButton(const char* buttonText) {
+    float offset = 0.5f * (ImGui::GetContentRegionAvail().x -
+        ImGui::CalcTextSize(buttonText).x + 2.0f * ImGui::GetStyle().FramePadding.x);
+    if (offset > 0.f)
+        ImGui::SetCursorPosX(ImGui::GetCursorPosX() + offset);
+    return ImGui::Button(buttonText);
+}
+
+glm::mat4 Scales::getCurrentMatrix() {
+    if (movements.size() == 0) return glm::mat4{ 1.f };
+    if (glm::length(movements[currentIndex]) == 0 || glm::all(glm::equal(movements[currentIndex], glm::vec3{ 1.f }))) {
+        currentIndex++; currentIndex %= movements.size();
+        return glm::mat4{ 1.f };
+    }
+    float elapsedMilliseconds = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now() - iStart).count();
+    if (std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now()
+        - movementStart).count() > millisecondsPerIteration) {
+        currentIterationStartScale = movements[currentIndex];
+        currentIndex++; currentIndex %= movements.size();
+        movementStart = std::chrono::system_clock::now();
+    }
+    iStart = std::chrono::system_clock::now();
+    glm::vec3 approxCoefs = glm::pow(movements[currentIndex]/currentIterationStartScale, glm::vec3{ elapsedMilliseconds / millisecondsPerIteration }); 
+    // approximation using delta time on frames as it's basis
+    return glm::scale(approxCoefs);
+}
+
+glm::mat4 Rotations::getCurrentMatrix() {
+    if (movements.size() == 0) return glm::mat4{ 1.f };
+    if (glm::length(movements[currentIndex]) == 0) {
+        currentIndex++; currentIndex %= movements.size();
+        return glm::mat4{ 1.f };
+    }
+    float elapsedMilliseconds = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now() - iStart).count();
+    if (std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now()
+        - movementStart).count() > millisecondsPerIteration) {
+        currentIndex++; currentIndex %= movements.size();
+        movementStart = std::chrono::system_clock::now();
+    }
+    float angle = elapsedMilliseconds / millisecondsPerIteration * glm::pi<float>() * 2; // part of a full circle
+    iStart = std::chrono::system_clock::now();
+    return glm::rotate(angle, movements[currentIndex]);
+}
+
+glm::mat4 Translations::getCurrentMatrix() {
+    if (movements.size() == 0) return glm::mat4{ 1.f };
+    if (glm::length(movements[currentIndex]) == 0) {
+        currentIndex++; currentIndex %= movements.size();
+        return glm::mat4{ 1.f };
+    }
+    float elapsedMilliseconds = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now() - iStart).count();
+    if (std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now()
+        - movementStart).count() > millisecondsPerIteration) {
+        currentIndex++; currentIndex %= movements.size();
+        movementStart = std::chrono::system_clock::now();
+    }
+    iStart = std::chrono::system_clock::now();
+    return glm::translate(movements[currentIndex] * elapsedMilliseconds / millisecondsPerIteration);
+}
+
+glm::mat4 Movement::getCurrentMatrix() {
+    return translations.getCurrentMatrix() * rotations.getCurrentMatrix() * scales.getCurrentMatrix();
+}
+
+void Movement::resetTimers() {
+    scales.iStart = std::chrono::system_clock::now();
+    rotations.iStart = std::chrono::system_clock::now();
+    translations.iStart = std::chrono::system_clock::now();
+    scales.movementStart = std::chrono::system_clock::now();
+    rotations.movementStart = std::chrono::system_clock::now();
+    translations.movementStart = std::chrono::system_clock::now();
+}
+//non-engine logic
 
 #pragma region Deprecated
 void VulkanEngine::upload_2D_rectangle_to_GPU() {

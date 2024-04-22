@@ -12,6 +12,8 @@
 #include "fastgltf/tools.hpp"
 #include "fastgltf/util.hpp"
 
+#include <glm/gtx/transform.hpp>
+#include <glm/gtx/string_cast.hpp>
 
 #pragma region Loaders
 std::optional<std::vector<std::shared_ptr<MeshAsset>>> loadGLTFMeshes(VulkanEngine* vulkanEngine, std::filesystem::path filePath) {
@@ -178,43 +180,44 @@ std::optional<std::shared_ptr<GLTFSceneInstance>> loadGLTFScene(VulkanEngine* vu
 		}
 	}
 
-	sceneReference.materialDataBuffer = vulkanEngine->create_allocated_buffer(sizeof(GLTFMetalRoughness::MaterialConstants) * gltfAsset.materials.size(),
-		VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
-	int dataIndex = 0;
-	GLTFMetalRoughness::MaterialConstants* sceneMaterialConstants = (GLTFMetalRoughness::MaterialConstants*)sceneReference.materialDataBuffer.vulkanMemoryAllocationInfo.pMappedData;
-	for (fastgltf::Material& gltfMaterial : gltfAsset.materials) {
-		std::shared_ptr<GLTFMaterial> newMaterial = std::make_shared<GLTFMaterial>();
-		tempGLTFMaterialsArray.push_back(newMaterial);
-		sceneReference.gltfMaterials[gltfMaterial.name.c_str()] = newMaterial;
-		GLTFMetalRoughness::MaterialConstants materialConstants;
-		materialConstants.colorFactors.x = gltfMaterial.pbrData.baseColorFactor[0];
-		materialConstants.colorFactors.y = gltfMaterial.pbrData.baseColorFactor[1];
-		materialConstants.colorFactors.z = gltfMaterial.pbrData.baseColorFactor[2];
-		materialConstants.colorFactors.w = gltfMaterial.pbrData.baseColorFactor[3];
-		materialConstants.metalRoughnessFactors.x = gltfMaterial.pbrData.metallicFactor;
-		materialConstants.metalRoughnessFactors.y = gltfMaterial.pbrData.roughnessFactor;
-		sceneMaterialConstants[dataIndex] = materialConstants;
-		MaterialType materialType = MaterialType::MainColor;
-		if (gltfMaterial.alphaMode == fastgltf::AlphaMode::Blend)
-			materialType = MaterialType::Transparent;
-		GLTFMetalRoughness::MaterialResources materialResources;
-		materialResources.colorImage = vulkanEngine->_whiteImage;
-		materialResources.colorSampler = vulkanEngine->_defaultSamplerLinear;
-		materialResources.metalRoughnessImage = vulkanEngine->_whiteImage;
-		materialResources.metalRoughnessSampler = vulkanEngine->_defaultSamplerLinear;
-		materialResources.dataBuffer = sceneReference.materialDataBuffer.vulkanBuffer;
-		materialResources.dataBufferOffset = dataIndex * sizeof(GLTFMetalRoughness::MaterialConstants);
-		if (gltfMaterial.pbrData.baseColorTexture.has_value()) {
-			size_t imageIndex = gltfAsset.textures[gltfMaterial.pbrData.baseColorTexture.value().textureIndex].imageIndex.value();
-			size_t samplerIndex = gltfAsset.textures[gltfMaterial.pbrData.baseColorTexture.value().textureIndex].samplerIndex.value();
-			materialResources.colorImage = tempAllocatedImagesArray[imageIndex];
-			materialResources.colorSampler = sceneReference.vulkanSamplers[samplerIndex];
+	if (gltfAsset.materials.size() != 0) {
+		sceneReference.materialDataBuffer = vulkanEngine->create_allocated_buffer(sizeof(GLTFMetalRoughness::MaterialConstants) * gltfAsset.materials.size(),
+			VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
+		int dataIndex = 0;
+		GLTFMetalRoughness::MaterialConstants* sceneMaterialConstants = (GLTFMetalRoughness::MaterialConstants*)sceneReference.materialDataBuffer.vulkanMemoryAllocationInfo.pMappedData;
+		for (fastgltf::Material& gltfMaterial : gltfAsset.materials) {
+			std::shared_ptr<GLTFMaterial> newMaterial = std::make_shared<GLTFMaterial>();
+			tempGLTFMaterialsArray.push_back(newMaterial);
+			sceneReference.gltfMaterials[gltfMaterial.name.c_str()] = newMaterial;
+			GLTFMetalRoughness::MaterialConstants materialConstants;
+			materialConstants.colorFactors.x = gltfMaterial.pbrData.baseColorFactor[0];
+			materialConstants.colorFactors.y = gltfMaterial.pbrData.baseColorFactor[1];
+			materialConstants.colorFactors.z = gltfMaterial.pbrData.baseColorFactor[2];
+			materialConstants.colorFactors.w = gltfMaterial.pbrData.baseColorFactor[3];
+			materialConstants.metalRoughnessFactors.x = gltfMaterial.pbrData.metallicFactor;
+			materialConstants.metalRoughnessFactors.y = gltfMaterial.pbrData.roughnessFactor;
+			sceneMaterialConstants[dataIndex] = materialConstants;
+			MaterialType materialType = MaterialType::MainColor;
+			if (gltfMaterial.alphaMode == fastgltf::AlphaMode::Blend)
+				materialType = MaterialType::Transparent;
+			GLTFMetalRoughness::MaterialResources materialResources;
+			materialResources.colorImage = vulkanEngine->_whiteImage;
+			materialResources.colorSampler = vulkanEngine->_defaultSamplerLinear;
+			materialResources.metalRoughnessImage = vulkanEngine->_whiteImage;
+			materialResources.metalRoughnessSampler = vulkanEngine->_defaultSamplerLinear;
+			materialResources.dataBuffer = sceneReference.materialDataBuffer.vulkanBuffer;
+			materialResources.dataBufferOffset = dataIndex * sizeof(GLTFMetalRoughness::MaterialConstants);
+			if (gltfMaterial.pbrData.baseColorTexture.has_value()) {
+				size_t imageIndex = gltfAsset.textures[gltfMaterial.pbrData.baseColorTexture.value().textureIndex].imageIndex.value();
+				size_t samplerIndex = gltfAsset.textures[gltfMaterial.pbrData.baseColorTexture.value().textureIndex].samplerIndex.value();
+				materialResources.colorImage = tempAllocatedImagesArray[imageIndex];
+				materialResources.colorSampler = sceneReference.vulkanSamplers[samplerIndex];
+			}
+			newMaterial->materialData = vulkanEngine->metalRoughnessMaterial.write_material(vulkanEngine->_vulkanDevice, materialType,
+				materialResources, sceneReference.scalableDescriptorPool);
+			dataIndex++;
 		}
-		newMaterial->materialData = vulkanEngine->metalRoughnessMaterial.write_material(vulkanEngine->_vulkanDevice, materialType,
-			materialResources, sceneReference.scalableDescriptorPool);
-		dataIndex++;
 	}
-
 	std::vector<uint32_t>indices;
 	std::vector<Vertex3D> vertices;
 	for (fastgltf::Mesh& gltfMesh : gltfAsset.meshes) {
@@ -272,11 +275,14 @@ std::optional<std::shared_ptr<GLTFSceneInstance>> loadGLTFScene(VulkanEngine* vu
 															[&](glm::vec4 colorVector, size_t index) {
 																vertices[initialVertex + index].color = colorVector;
 															});
-			if (primitive.materialIndex.has_value())
-				newGeoSurface.gltfMaterial = tempGLTFMaterialsArray[primitive.materialIndex.value()];
-			else
-				newGeoSurface.gltfMaterial = tempGLTFMaterialsArray[0];
-
+			if (gltfAsset.materials.size() != 0) {
+				if (primitive.materialIndex.has_value())
+					newGeoSurface.gltfMaterial = tempGLTFMaterialsArray[primitive.materialIndex.value()];
+				else
+					newGeoSurface.gltfMaterial = tempGLTFMaterialsArray[0];
+			}
+			else 
+				newGeoSurface.gltfMaterial = std::make_shared<GLTFMaterial>(vulkanEngine->defaultMaterialData);
 			glm::vec3 minPosition = vertices[initialVertex].position;
 			glm::vec3 maxPosition = vertices[initialVertex].position;
 			for (int i = initialVertex; i < vertices.size(); i++) {

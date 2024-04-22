@@ -5,6 +5,7 @@
 #include <optional>
 #include <string>
 #include <vector>
+#include <queue>
 #include <span>
 #include <array>
 #include <functional>
@@ -15,6 +16,7 @@
 #include <fmt/core.h>
 #include <glm/mat4x4.hpp>
 #include <glm/vec4.hpp>
+#include <chrono>
 
 
 #define VK_CHECK(x)                                                     \

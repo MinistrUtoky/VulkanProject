@@ -7,7 +7,7 @@ public:
 	glm::vec3 position;
 	float pitch{ 0.f };
 	float yaw{ 0.f };
-	glm::vec3 limitsXYZ{ 10.f, 10.f, 10.f };
+	glm::vec3 limitsXYZ{ 15.f, 15.f, 15.f };
 
 	glm::mat4 getViewMatrix();
 	glm::mat4 getRotationMatrix();

@@ -35,8 +35,8 @@ void Camera::processSDLEvent(SDL_Event& sdlEvent) {
 			velocity.x = 0;
 	}
 	if (sdlEvent.type == SDL_MOUSEMOTION) {
-		yaw += (float)sdlEvent.motion.xrel / 300.f;
-		pitch -= (float)sdlEvent.motion.yrel / 300.f;
+		yaw += (float)sdlEvent.motion.xrel / 500.f;
+		pitch -= (float)sdlEvent.motion.yrel / 500.f;
 	}
 }
 
